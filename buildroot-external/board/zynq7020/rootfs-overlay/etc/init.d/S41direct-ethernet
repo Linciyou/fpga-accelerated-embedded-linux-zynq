@@ -1,0 +1,15 @@
+#!/bin/sh
+
+case "$1" in
+    start)
+        count=0
+        while ! /bin/busybox ip link show dev eth0 >/dev/null 2>&1; do
+            count=$((count + 1))
+            [ "$count" -ge 200 ] && exit 1
+            sleep 0.1
+        done
+        /bin/busybox ifconfig eth0 192.168.7.2 netmask 255.255.255.0 up
+        [ "$?" -eq 0 ] || exit 1
+        /bin/busybox ip route del default dev eth0 2>/dev/null || true
+        ;;
+esac

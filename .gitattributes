@@ -1,0 +1,12 @@
+* text=auto
+
+*.c text eol=lf
+*.h text eol=lf
+*.v text eol=lf
+*.dts text eol=lf
+*.tcl text eol=lf
+*.sh text eol=lf
+*.mk text eol=lf
+*.md text eol=lf
+*.ps1 text eol=crlf
+*.cmd text eol=crlf

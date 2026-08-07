@@ -1,0 +1,41 @@
+# Generated FPGA and Vitis outputs
+/.Xil/
+/.p/
+/build/
+*.bit
+*.bin
+*.bif
+*.xsa
+*.elf
+*.jou
+*.log
+*.backup.*
+
+# Generated Linux and disk images
+*.dtb
+*.img
+*.vfat
+*.cpio
+*.cpio.gz
+*.ext2
+*.ext4
+*.tar
+uImage
+uRamdisk
+
+# Buildroot source clone and output trees
+/.buildroot/
+/buildroot-external/build/
+
+# Local assistant metadata and supplied reference material
+/.agents/
+/.codex/
+*.pdf
+dfx_runtime.txt
+
+# Host editor and operating-system files
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+Desktop.ini
