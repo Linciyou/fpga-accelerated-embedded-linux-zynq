@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="820" viewBox="0 0 1280 820" role="img" aria-labelledby="title desc">
+  <title id="title">Zynq-7020 FPGA and Embedded Linux project file map</title>
+  <desc id="desc">A map of the main hardware, Linux driver, application, Buildroot, and deployment files in the repository.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#3d556b"/>
+    </marker>
+    <style>
+      .title { font: 700 28px Arial, sans-serif; fill: #17212b; }
+      .subtitle { font: 15px Arial, sans-serif; fill: #52616f; }
+      .section { font: 700 18px Arial, sans-serif; fill: #17212b; }
+      .box-title { font: 700 16px Arial, sans-serif; fill: #17212b; }
+      .box-text { font: 14px Arial, sans-serif; fill: #334452; }
+      .file { font: 13px Consolas, monospace; fill: #1c536d; }
+      .note { font: 13px Arial, sans-serif; fill: #52616f; }
+      .line { stroke: #3d556b; stroke-width: 2.2; fill: none; marker-end: url(#arrow); }
+      .thin-line { stroke: #9aabb8; stroke-width: 1.5; fill: none; stroke-dasharray: 5 5; }
+    </style>
+  </defs>
+
+  <rect width="1280" height="820" fill="#f7f9fb"/>
+  <rect x="28" y="24" width="1224" height="772" rx="8" fill="#ffffff" stroke="#d6e0e7" stroke-width="2"/>
+
+  <text x="64" y="72" class="title">Zynq-7020 FPGA + Embedded Linux FFT Accelerator</text>
+  <text x="64" y="101" class="subtitle">Key repository files and the path from Vivado design to Linux user space</text>
+
+  <text x="64" y="145" class="section">1. FPGA design</text>
+  <rect x="64" y="164" width="320" height="154" rx="6" fill="#eaf3f7" stroke="#78a9ba" stroke-width="2"/>
+  <text x="84" y="194" class="box-title">hardware/</text>
+  <text x="84" y="220" class="file">vivado/create_zynq7020_fft_linux.tcl</text>
+  <text x="84" y="246" class="file">rtl/axis_sample_sim.v</text>
+  <text x="84" y="272" class="file">vivado/zynq7020_rgmii.xdc</text>
+  <text x="84" y="298" class="box-text">Creates PS + PL, AXI stream FFT, DMA,</text>
+  <text x="84" y="316" class="box-text">Ethernet, clocks, and board constraints.</text>
+
+  <rect x="438" y="164" width="380" height="154" rx="6" fill="#eef5f1" stroke="#7fae91" stroke-width="2"/>
+  <text x="458" y="194" class="box-title">PL data path</text>
+  <text x="458" y="228" class="box-text">axis_sample_sim</text>
+  <text x="600" y="228" class="box-text">AXI4-Stream FIFO</text>
+  <text x="458" y="262" class="box-text">XFFT</text>
+  <text x="600" y="262" class="box-text">AXI DMA S2MM</text>
+  <text x="458" y="298" class="note">1024 samples -> FFT -> PS DDR</text>
+
+  <rect x="872" y="164" width="320" height="154" rx="6" fill="#f5f0e8" stroke="#c6a56d" stroke-width="2"/>
+  <text x="892" y="194" class="box-title">PS memory result</text>
+  <text x="892" y="228" class="box-text">DMA writes the FFT frame into</text>
+  <text x="892" y="254" class="box-text">coherent PS DDR memory.</text>
+  <text x="892" y="290" class="file">/dev/fft_dma0</text>
+  <text x="892" y="312" class="note">Linux receives completion by IRQ.</text>
+
+  <path d="M384 241 H438" class="line"/>
+  <path d="M818 241 H872" class="line"/>
+
+  <text x="64" y="370" class="section">2. Embedded Linux</text>
+  <rect x="64" y="389" width="320" height="166" rx="6" fill="#f0eef8" stroke="#9990c4" stroke-width="2"/>
+  <text x="84" y="419" class="box-title">buildroot-external/</text>
+  <text x="84" y="446" class="file">board/zynq7020/zynq7020-fft.dts</text>
+  <text x="84" y="472" class="file">configs/zynq7020_fft_defconfig</text>
+  <text x="84" y="498" class="file">package/fft-dma-driver/</text>
+  <text x="84" y="524" class="file">board/zynq7020/rootfs-overlay/</text>
+  <text x="84" y="548" class="box-text">Kernel, DTB, rootfs, and services.</text>
+
+  <rect x="438" y="389" width="320" height="166" rx="6" fill="#eaf3f7" stroke="#78a9ba" stroke-width="2"/>
+  <text x="458" y="419" class="box-title">Linux kernel driver</text>
+  <text x="458" y="451" class="file">linux_driver/fft_dma_drv.c</text>
+  <text x="458" y="478" class="file">linux_driver/fft_dma_uapi.h</text>
+  <text x="458" y="514" class="box-text">Platform driver, coherent DMA buffer,</text>
+  <text x="458" y="538" class="box-text">IRQ completion, timeout, and ioctl API.</text>
+
+  <rect x="812" y="389" width="380" height="166" rx="6" fill="#eef5f1" stroke="#7fae91" stroke-width="2"/>
+  <text x="832" y="419" class="box-title">User-space validation</text>
+  <text x="832" y="451" class="file">linux_app/fft_dma_test.c</text>
+  <text x="832" y="478" class="file">linux_app/fft_ethernet_server.c</text>
+  <text x="832" y="514" class="box-text">Local ioctl test and direct Ethernet</text>
+  <text x="832" y="538" class="box-text">test interface on TCP port 5000.</text>
+
+  <path d="M384 472 H438" class="line"/>
+  <path d="M758 472 H812" class="line"/>
+  <path d="M1032 318 V389" class="line"/>
+
+  <text x="64" y="608" class="section">3. Boot and deployment</text>
+  <rect x="64" y="627" width="350" height="120" rx="6" fill="#f5f0e8" stroke="#c6a56d" stroke-width="2"/>
+  <text x="84" y="657" class="box-title">QSPI boot package</text>
+  <text x="84" y="684" class="file">hardware/vivado/package_qspi_boot.tcl</text>
+  <text x="84" y="711" class="box-text">FSBL + bitstream + U-Boot</text>
+  <text x="84" y="733" class="note">Programmed through JTAG, booted from QSPI.</text>
+
+  <rect x="464" y="627" width="350" height="120" rx="6" fill="#f0eef8" stroke="#9990c4" stroke-width="2"/>
+  <text x="484" y="657" class="box-title">Software-only SD image</text>
+  <text x="484" y="684" class="file">buildroot-external/scripts/make_sd_image.sh</text>
+  <text x="484" y="711" class="box-text">uImage + DTB + ext4 rootfs</text>
+  <text x="484" y="733" class="note">Linux payload loaded by U-Boot from SD.</text>
+
+  <rect x="864" y="627" width="328" height="120" rx="6" fill="#f7f9fb" stroke="#9aabb8" stroke-width="2"/>
+  <text x="884" y="657" class="box-title">Board test scripts</text>
+  <text x="884" y="684" class="file">scripts/verify_sdcard.ps1</text>
+  <text x="884" y="711" class="file">scripts/test_fft_over_ethernet.ps1</text>
+  <text x="884" y="733" class="note">SD verification and direct-link test.</text>
+
+  <path d="M224 555 V627" class="thin-line"/>
+  <path d="M639 555 V627" class="thin-line"/>
+  <path d="M1002 555 V627" class="thin-line"/>
+
+  <text x="64" y="778" class="note">Read first: README.md  |  Detailed records: docs/ARCHITECTURE.md, docs/BUILD_AND_DEPLOY.md, docs/VALIDATION.md</text>
+</svg>

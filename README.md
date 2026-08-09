@@ -18,6 +18,10 @@ the kernel, Device Tree, and Buildroot root filesystem.
 | Boot | QSPI for FSBL/bitstream/U-Boot; SD for Linux |
 | Host link | Direct Ethernet, TCP port 5000 |
 
+## Project file map
+
+![Project file map](docs/project-file-map.svg)
+
 ## Data flow
 
 ```mermaid
