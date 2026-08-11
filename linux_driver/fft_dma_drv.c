@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+#include <linux/bitops.h>
 #include <linux/completion.h>
 #include <linux/dma-mapping.h>
 #include <linux/delay.h>
@@ -14,7 +15,7 @@
 #include <linux/platform_device.h>
 #include <linux/uaccess.h>
 
-#include "fft_dma_uapi.h"
+#include <fft_dma_uapi.h>
 
 #define FFT_SAMPLES             1024u
 #define FFT_DMA_BYTES           (FFT_SAMPLES * sizeof(u32))

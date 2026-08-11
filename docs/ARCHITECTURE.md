@@ -24,7 +24,7 @@ The Device Tree gives `fft_dma_drv` a DMA register range, a capture GPIO range,
 and the S2MM interrupt. The driver allocates a 4 KiB coherent buffer, resets
 and starts S2MM, writes the DMA address and length, then waits up to one second
 for the interrupt. The ioctl returns DMA status, received bytes, and the peak
-sample.
+sample. The full Linux contract is in [LINUX_INTEGRATION.md](LINUX_INTEGRATION.md).
 
 ## Ethernet control
 

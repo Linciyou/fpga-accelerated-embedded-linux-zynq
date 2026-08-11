@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef FFT_DMA_UAPI_H
 #define FFT_DMA_UAPI_H
 

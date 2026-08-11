@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* Userspace validation client for the zynq7020-fft-dma kernel driver. */
 #include <errno.h>
 #include <fcntl.h>
@@ -6,7 +7,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
-#include "fft_dma_uapi.h"
+#include <fft_dma_uapi.h>
 
 int main(void)
 {

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* Direct Ethernet control endpoint for the FFT DMA kernel driver. */
 #include <errno.h>
 #include <fcntl.h>
@@ -8,7 +9,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include "fft_dma_uapi.h"
+#include <fft_dma_uapi.h>
 
 #define SERVER_PORT 5000
 #define LINE_SIZE 64

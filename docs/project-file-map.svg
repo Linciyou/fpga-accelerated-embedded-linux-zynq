@@ -63,7 +63,7 @@
   <rect x="438" y="389" width="320" height="166" rx="6" fill="#eaf3f7" stroke="#78a9ba" stroke-width="2"/>
   <text x="458" y="419" class="box-title">Linux kernel driver</text>
   <text x="458" y="451" class="file">linux_driver/fft_dma_drv.c</text>
-  <text x="458" y="478" class="file">linux_driver/fft_dma_uapi.h</text>
+  <text x="458" y="478" class="file">include/uapi/fft_dma_uapi.h</text>
   <text x="458" y="514" class="box-text">Platform driver, coherent DMA buffer,</text>
   <text x="458" y="538" class="box-text">IRQ completion, timeout, and ioctl API.</text>
 
@@ -101,5 +101,5 @@
   <path d="M639 555 V627" class="thin-line"/>
   <path d="M1002 555 V627" class="thin-line"/>
 
-  <text x="64" y="778" class="note">Read first: README.md  |  Detailed records: docs/ARCHITECTURE.md, docs/BUILD_AND_DEPLOY.md, docs/VALIDATION.md</text>
+  <text x="64" y="778" class="note">Read first: README.md  |  Detailed records: docs/LINUX_INTEGRATION.md and docs/VALIDATION.md</text>
 </svg>

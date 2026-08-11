@@ -8,13 +8,32 @@ writes the result to PS DDR through AXI DMA. Linux starts the transfer through
 The board boots FSBL, the bitstream, and U-Boot from QSPI. The SD card contains
 the kernel, Device Tree, and Buildroot root filesystem.
 
+## Embedded Linux scope
+
+This is a board-support and kernel-integration project, not a user-space DMA
+demo. The Linux driver owns the AXI DMA registers and coherent buffer; user
+space receives a small ioctl result instead of mapping PL registers or DDR with
+`/dev/mem`.
+
+| Area | Evidence in this repository |
+| --- | --- |
+| Board bring-up | Zynq PS configuration, QSPI boot package, SD Linux image, and direct Ethernet link |
+| Kernel integration | Custom Device Tree node, platform driver, misc device, and init-time module loading |
+| DMA correctness | 32-bit coherent allocation, IRQ completion, serialized requests, timeout, and error status handling |
+| User-space boundary | Shared UAPI header, local ioctl client, and small TCP control endpoint |
+| Reproducibility | Buildroot defconfig and external packages, Vivado/Vitis Tcl, SD write verification, and repository checks |
+
+Read [Linux integration](docs/LINUX_INTEGRATION.md) for the Device Tree,
+driver, UAPI, and target-validation contracts. Build and deployment commands
+are in [Build and deploy](docs/BUILD_AND_DEPLOY.md).
+
 ## Main components
 
 | Part | Used here |
 | --- | --- |
 | SoC | XC7Z020-2CLG484I |
 | PL path | Sample source -> AXI4-Stream FIFO -> XFFT -> AXI DMA S2MM |
-| Linux | Buildroot, Device Tree, `fft_dma_drv`, ioctl interface |
+| Linux | Buildroot, Device Tree, platform DMA driver, shared ioctl UAPI |
 | Boot | QSPI for FSBL/bitstream/U-Boot; SD for Linux |
 | Host link | Direct Ethernet, TCP port 5000 |
 
@@ -85,12 +104,14 @@ Board: 192.168.7.2/24
 | Path | Contents |
 | --- | --- |
 | [`hardware/`](hardware) | RTL, Vivado Tcl, constraints, QSPI and JTAG scripts |
-| [`linux_driver/`](linux_driver) | AXI DMA platform driver and ioctl header |
+| [`linux_driver/`](linux_driver) | AXI DMA platform driver |
+| [`include/uapi/`](include/uapi) | Shared ioctl ABI for the driver and user-space clients |
 | [`linux_app/`](linux_app) | Local test client and Ethernet server |
 | [`buildroot-external/`](buildroot-external) | Buildroot defconfig, packages, DTB, SD image files |
 | [`docs/HARDWARE.md`](docs/HARDWARE.md) | Board wiring used by this design |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Boot and DMA notes |
 | [`docs/VALIDATION.md`](docs/VALIDATION.md) | Board test record |
+| [`docs/LINUX_INTEGRATION.md`](docs/LINUX_INTEGRATION.md) | Driver, Device Tree, UAPI, and Buildroot contracts |
 | [`docs/BUILD_AND_DEPLOY.md`](docs/BUILD_AND_DEPLOY.md) | Build and programming commands |
 
 ## Notes
@@ -100,3 +121,5 @@ Board: 192.168.7.2/24
   scripts in this repository.
 - This design has not been tested with a physical ADC or as a long-duration
   acquisition system.
+- `./scripts/check_project.sh` verifies host-side source and user-space builds;
+  it does not replace the target DMA test.

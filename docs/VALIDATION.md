@@ -28,3 +28,7 @@ RESULT status=0x00000002 bytes=4096 peak=1 re=16384 im=0 mag2=268435456
 
 Not covered by these tests: an external ADC, sustained-rate capture, analog
 signal quality, and long-duration DMA stress.
+
+The dynamic DMA address and `/dev/fft_dma0` ioctl path demonstrate that Linux
+allocated and controlled the transfer. They do not establish a fixed DDR
+address or replace a throughput benchmark.
