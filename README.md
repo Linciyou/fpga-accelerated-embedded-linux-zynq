@@ -1,93 +1,88 @@
 # Zynq-7020 FPGA + Embedded Linux FFT Accelerator
 
-This repository contains the FPGA and Embedded Linux files for a Zynq-7020 FFT
-test design. The PL generates a 1024-sample stream, passes it through XFFT, and
-writes the result to PS DDR through AXI DMA. Linux starts the transfer through
-`/dev/fft_dma0` and waits for the DMA interrupt.
+This project runs a PL FFT capture path on a Zynq-7020 board and controls it
+from Buildroot Linux. `axis_sample_sim` produces a 1024-sample stream, which
+passes through XFFT and AXI DMA S2MM into PS DDR.
 
-The board boots FSBL, the bitstream, and U-Boot from QSPI. The SD card contains
-the kernel, Device Tree, and Buildroot root filesystem.
+The Linux platform driver owns the DMA channel. It allocates a 4 KiB coherent
+buffer, starts the transfer, waits for the PL interrupt, and returns the FFT
+peak through `/dev/fft_dma0`. User space does not map AXI DMA registers or DDR
+through `/dev/mem`.
 
-## Embedded Linux scope
+FSBL, the PL bitstream, and U-Boot boot from QSPI. The kernel, DTB, and
+Buildroot root filesystem are loaded from SD.
 
-This is a board-support and kernel-integration project, not a user-space DMA
-demo. The Linux driver owns the AXI DMA registers and coherent buffer; user
-space receives a small ioctl result instead of mapping PL registers or DDR with
-`/dev/mem`.
+## Linux implementation
 
-| Area | Evidence in this repository |
-| --- | --- |
-| Board bring-up | Zynq PS configuration, QSPI boot package, SD Linux image, and direct Ethernet link |
-| Kernel integration | Custom Device Tree node, platform driver, misc device, and init-time module loading |
-| DMA correctness | 32-bit coherent allocation, IRQ completion, serialized requests, timeout, and error status handling |
-| User-space boundary | Shared UAPI header, local ioctl client, and small TCP control endpoint |
-| Reproducibility | Buildroot defconfig and external packages, Vivado/Vitis Tcl, SD write verification, and repository checks |
+- The Device Tree describes the DMA registers, capture GPIO, and S2MM IRQ.
+- `fft_dma_drv` is a platform driver with coherent DMA memory, interrupt
+  completion, request serialization, timeout handling, and a misc-device ioctl.
+- `include/uapi/fft_dma_uapi.h` is the shared ABI used by the driver and both
+  user-space clients.
+- Buildroot builds the module, local test client, and direct Ethernet endpoint
+  into the target image.
 
-Read [Linux integration](docs/LINUX_INTEGRATION.md) for the Device Tree,
-driver, UAPI, and target-validation contracts. Build and deployment commands
-are in [Build and deploy](docs/BUILD_AND_DEPLOY.md).
-
-## Main components
-
-| Part | Used here |
-| --- | --- |
-| SoC | XC7Z020-2CLG484I |
-| PL path | Sample source -> AXI4-Stream FIFO -> XFFT -> AXI DMA S2MM |
-| Linux | Buildroot, Device Tree, platform DMA driver, shared ioctl UAPI |
-| Boot | QSPI for FSBL/bitstream/U-Boot; SD for Linux |
-| Host link | Direct Ethernet, TCP port 5000 |
+[Linux integration](docs/LINUX_INTEGRATION.md) documents the Device Tree,
+driver, UAPI, and Buildroot interfaces. [Build and deploy](docs/BUILD_AND_DEPLOY.md)
+contains the build and programming commands.
 
 ## Project file map
 
 ![Project file map](docs/project-file-map.svg)
 
-## Data flow
+## Data path
 
 ```mermaid
 flowchart LR
-    Source["Sample source"] --> FIFO["AXI4-Stream FIFO"]
-    FIFO --> FFT["XFFT"]
-    FFT --> DMA["AXI DMA S2MM"]
-    DMA --> DDR["PS DDR"]
-    DDR --> Driver["fft_dma_drv"]
-    Driver --> App["fft_dma_test<br/>or Ethernet server"]
+    subgraph PL["PL"]
+        Source["Sample source"] --> FIFO["AXI4-Stream FIFO"]
+        FIFO --> FFT["XFFT"]
+        FFT --> DMA["AXI DMA S2MM"]
+    end
+    subgraph PS["PS and Embedded Linux"]
+        Buffer["Coherent DMA buffer<br/>in PS DDR"] --> Driver["fft_dma_drv"]
+        Driver --> App["fft_dma_test<br/>or Ethernet server"]
+    end
+    DMA --> Buffer
 ```
 
-The sample source is `axis_sample_sim`, not an ADC. It produces a deterministic
-Q15 frame at a 100 MHz stream clock. XFFT output is bit-reversed, so this test
-expects its largest value at bin 1.
+The sample source is a synthesizable test generator, not an ADC. It sends a
+deterministic Q15 frame at a 100 MHz stream clock. XFFT output is bit-reversed,
+so this test expects the largest value at bin 1.
 
-## Boot flow
+## Boot layout
+
+| Storage | Contents |
+| --- | --- |
+| QSPI | FSBL, PL bitstream, and U-Boot |
+| SD FAT partition | `uImage`, `zynq7020-fft.dtb`, and `extlinux.conf` |
+| SD ext4 partition | Buildroot root filesystem |
 
 ```text
-Power on
-  -> QSPI BootROM mode
-  -> FSBL and PL bitstream from QSPI
-  -> U-Boot from QSPI
-  -> uImage and DTB from SD FAT partition
-  -> rootfs from /dev/mmcblk0p2
+Power on -> QSPI BootROM -> FSBL + bitstream -> U-Boot
+         -> kernel + DTB from SD -> rootfs from /dev/mmcblk0p2
 ```
 
 The SD image is software-only. It does not contain `BOOT.BIN`, an FSBL, a
 bitstream, or U-Boot.
 
-## Last board test
+## Board test
 
-The following values came from the board after a QSPI reset and an Ethernet
-`RUN` request:
+After a QSPI reset and SD Linux boot, the PC sent `RUN` to the board over the
+direct Ethernet link. The server opened `/dev/fft_dma0` and issued the ioctl.
 
 ```text
-BOOT_MODE: 0x00000001
-PC:        0xC0121D28
 RESULT status=0x00000002 bytes=4096 peak=1 re=16384 im=0 mag2=268435456
 ```
 
-`0x00000002` is the AXI DMA idle/completion state. During the earlier JTAG
-check, the DMA destination was `0x1F042000`, a runtime coherent DMA address.
+`0x00000002` is the AXI DMA idle state after completion. The full board record,
+including the dynamic coherent DMA address observed during JTAG inspection, is
+in [VALIDATION.md](docs/VALIDATION.md).
 
-## Run the Ethernet test
+## Run the direct Ethernet test
 
-Use a direct link between the PC USB Ethernet adapter and the board:
+Use a direct link between the PC USB Ethernet adapter and the board. No router,
+gateway, or DHCP server is used.
 
 ```text
 PC:    192.168.7.1/24
@@ -103,23 +98,30 @@ Board: 192.168.7.2/24
 
 | Path | Contents |
 | --- | --- |
-| [`hardware/`](hardware) | RTL, Vivado Tcl, constraints, QSPI and JTAG scripts |
+| [`hardware/`](hardware) | RTL, Vivado Tcl, constraints, QSPI, and JTAG scripts |
 | [`linux_driver/`](linux_driver) | AXI DMA platform driver |
-| [`include/uapi/`](include/uapi) | Shared ioctl ABI for the driver and user-space clients |
+| [`include/uapi/`](include/uapi) | Shared ioctl ABI |
 | [`linux_app/`](linux_app) | Local test client and Ethernet server |
-| [`buildroot-external/`](buildroot-external) | Buildroot defconfig, packages, DTB, SD image files |
+| [`buildroot-external/`](buildroot-external) | Buildroot defconfig, packages, DTB, and SD image files |
 | [`docs/HARDWARE.md`](docs/HARDWARE.md) | Board wiring used by this design |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Boot and DMA notes |
-| [`docs/VALIDATION.md`](docs/VALIDATION.md) | Board test record |
-| [`docs/LINUX_INTEGRATION.md`](docs/LINUX_INTEGRATION.md) | Driver, Device Tree, UAPI, and Buildroot contracts |
-| [`docs/BUILD_AND_DEPLOY.md`](docs/BUILD_AND_DEPLOY.md) | Build and programming commands |
+| [`docs/LINUX_INTEGRATION.md`](docs/LINUX_INTEGRATION.md) | Device Tree, driver, UAPI, and Buildroot details |
+| [`docs/VALIDATION.md`](docs/VALIDATION.md) | Board test record and test limits |
 
-## Notes
+## Development checks
 
-- `fft_dma_drv` is GPL-2.0-only because it uses GPL-only kernel symbols.
-- Vivado, Vitis, and Buildroot outputs are ignored. Rebuild them from the
-  scripts in this repository.
-- This design has not been tested with a physical ADC or as a long-duration
-  acquisition system.
-- `./scripts/check_project.sh` verifies host-side source and user-space builds;
-  it does not replace the target DMA test.
+Run the lightweight source checks from WSL or another Linux host:
+
+```bash
+./scripts/check_project.sh
+```
+
+This checks shell syntax and builds the user-space clients. It does not replace
+the target DMA test. GitHub Actions runs the same check on pushes and pull
+requests.
+
+## Limits
+
+- No external ADC has been connected to this design.
+- Sustained-rate capture, analog signal quality, and long-duration DMA stress
+  have not been measured.
+- The kernel module is GPL-2.0-only because it uses GPL-only kernel symbols.
