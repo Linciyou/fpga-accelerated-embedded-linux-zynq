@@ -26,10 +26,6 @@ Buildroot root filesystem are loaded from SD.
 driver, UAPI, and Buildroot interfaces. [Build and deploy](docs/BUILD_AND_DEPLOY.md)
 contains the build and programming commands.
 
-## Project file map
-
-![Project file map](docs/project-file-map.svg)
-
 ## Data path
 
 ```mermaid
