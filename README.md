@@ -1,4 +1,4 @@
-# Zynq-7020 FPGA + Embedded Linux FFT Accelerator
+# FPGA-Accelerated Embedded Linux System on Zynq
 
 This project runs a PL FFT capture path on a Zynq-7020 board and controls it
 from Buildroot Linux. `axis_sample_sim` produces a 1024-sample stream, which
