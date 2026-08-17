@@ -1,48 +1,56 @@
-# FPGA-Accelerated Embedded Linux System on Zynq
+# Zynq-7020 FPGA + Embedded Linux DMA Path
 
-This project is a Zynq-7020 hardware/software integration exercise. Buildroot
-Linux controls a one-frame PL-to-PS DMA path and exposes the result through a
-small kernel driver.
+This repository contains the hardware and software for a Zynq-7020 PL-to-PS
+capture path. The PL produces a fixed AXI4-Stream frame, sends it through
+Xilinx XFFT and AXI DMA S2MM, and writes the result into PS DDR through HP0.
+Buildroot Linux exposes one capture through `/dev/fft_dma0`.
 
-The workload uses the Xilinx XFFT IP with a synthesizable sample generator. The
-FFT algorithm and XFFT RTL are not the contribution here. The contribution is
-the integration around it: PS/PL wiring, AXI DMA, Device Tree, a Linux
-DMAengine client, Buildroot packaging, and repeatable board validation.
+XFFT is Xilinx IP used as a realistic stream workload. The FFT algorithm and
+RTL are not custom work in this repository. The work here is the PS/PL
+integration, DMA path, Device Tree binding, Linux client driver, Buildroot
+image, and board validation.
 
-The first version directly operated the AXI DMA registers; the current version
-uses the upstream Xilinx DMAengine provider with a custom client driver, while
-the V1 source remains as historical evidence in
-[`linux_driver/v1_register/`](linux_driver/v1_register/).
+The first version directly operated AXI DMA registers. The active version uses
+the upstream Xilinx DMAengine provider with a custom client driver; the old
+source remains in [`linux_driver/v1_register/`](linux_driver/v1_register/) as a
+historical reference.
 
-## What I built
+## Design
 
-- Integrated Zynq PS, AXI4-Stream source, FIFO, Xilinx XFFT IP, AXI DMA S2MM,
-  HP0 DDR access, Ethernet, and UART in Vivado.
-- Described the AXI DMA provider and client relationship in Device Tree.
-- Implemented a small DMAengine client with a serialized ioctl path:
-  `ioctl -> one frame -> wait for completion -> process -> return`.
-- Built the kernel module, UAPI header, test client, benchmark, and Ethernet
-  endpoint into a Buildroot image.
-- Validated the same software payload first over JTAG and then from SD boot.
+```text
+axis_sample_sim -> AXI4-Stream FIFO -> Xilinx XFFT -> AXI DMA S2MM
+    -> Zynq HP0 -> coherent PS DDR buffer -> fft_dma_drv -> /dev/fft_dma0
+```
 
-## DMA ownership
+The PL source is a deterministic Q15 sample generator. It sends one frame of
+1024 32-bit words, so every DMA request is 4096 bytes. There is no external ADC
+in this design.
+
+## Linux DMA path
+
+`fft_dma_drv` is a DMAengine client. Its user interface intentionally stays
+small:
+
+```text
+ioctl -> start one frame -> wait for completion -> find peak -> return result
+```
 
 ```text
 Custom fft_dma driver
-  |-- owns capture control register
-  |-- owns coherent result buffer lifecycle
-  |-- exposes /dev/fft_dma0
-  |
+  |-- capture control register
+  |-- coherent result buffer lifecycle
+  |-- /dev/fft_dma0
   `-- DMAengine client
           |
           v
 Xilinx AXI DMA Linux driver
-  |-- owns AXI DMA registers
-  |-- owns the S2MM IRQ
-  `-- reports descriptor completion
+  |-- AXI DMA registers
+  |-- S2MM IRQ
+  `-- DMA descriptor completion
 ```
 
-The Device Tree path is:
+The Device Tree relationship is deliberately kept separate from the DMA
+provider:
 
 ```text
 fft_dma client node
@@ -52,48 +60,53 @@ fft_dma client node
   -> AXI DMA S2MM hardware
 ```
 
-The custom driver does not map AXI DMA registers, acknowledge the DMA IRQ, or
-expose DMA addresses to user space.
+The client driver never maps AXI DMA registers, acknowledges the DMA IRQ, or
+passes DMA addresses to user space. Those belong to the Xilinx DMAengine
+provider.
 
-## Data path
+## Frame contract
 
-```text
-axis_sample_sim -> AXI4-Stream FIFO -> Xilinx XFFT -> AXI DMA S2MM
-    -> Zynq HP0 -> coherent PS DDR buffer -> fft_dma_drv -> /dev/fft_dma0
-```
+| Setting | Value | Reason |
+| --- | --- | --- |
+| `FFT_DMA_FRAME_SAMPLES` | 1024 | Matches the current PL frame and XFFT transform length. |
+| `FFT_DMA_FRAME_BYTES` | 4096 | 1024 samples x 32-bit stream word. |
+| `FFT_DMA_TIMEOUT_MS` | 1000 | Watchdog for recovery; not the expected transfer time. |
 
-The sample generator produces a deterministic Q15 frame. The frame is
-`1024` 32-bit words, or `4096` bytes. That size matches the current PL test
-stream and keeps one ioctl request bounded and easy to inspect. The driver
-waits up to `1000 ms` as a transfer watchdog; this is an error recovery limit,
-not an expected transfer time.
+The definitions live in
+[`include/uapi/fft_dma_uapi.h`](include/uapi/fft_dma_uapi.h), so the kernel
+driver and user-space tests use the same values.
 
-## Validation snapshot
+## Board validation
 
-- `10,000` consecutive DMA transfers
-- `0` timeout / DMA errors
-- About `205 us` mean end-to-end latency
+The DMAengine version was validated with the same target payload first through
+JTAG and then after booting Linux from SD.
 
-The latency distribution, throughput, raw output, timeout record, IRQ record,
-DT record, and SD-boot evidence are in
+- 10,000 consecutive transfers
+- 0 timeout or DMA errors
+- About 205 us mean end-to-end latency
+
+The result includes setup, trigger, DMA completion, and peak search. It is not
+AXI DMA peak bandwidth. Raw output, latency and throughput details, and the
+DMA timeout, IRQ, and Device Tree debugging notes are in
 [`docs/DMAENGINE_V2_DEBUG.md`](docs/DMAENGINE_V2_DEBUG.md).
-
-The reported throughput is sequential end-to-end transaction throughput, not
-AXI DMA peak bandwidth.
 
 ## Boot and test
 
-QSPI stores the existing FSBL, PL bitstream, and U-Boot. The software-only SD
-image stores the Linux kernel, DTB, Buildroot root filesystem, driver, and test
-applications.
+QSPI contains the existing FSBL, PL bitstream, and U-Boot. The SD card is
+software-only: kernel, DTB, Buildroot root filesystem, module, and test tools.
 
 ```text
 QSPI BootROM -> FSBL + PL bitstream -> U-Boot
              -> SD kernel + DTB -> SD rootfs -> /dev/fft_dma0
 ```
 
-For a direct Ethernet test, use `192.168.7.1/24` on the PC adapter and
-`192.168.7.2/24` on the board:
+The direct Ethernet test uses a PC USB Ethernet adapter connected directly to
+the Zynq Ethernet port. No DHCP server or router is required.
+
+```text
+PC:    192.168.7.1/24
+Board: 192.168.7.2/24
+```
 
 ```powershell
 .\scripts\set_direct_ethernet.ps1 -InterfaceAlias "<USB Ethernet alias>"
@@ -102,25 +115,25 @@ For a direct Ethernet test, use `192.168.7.1/24` on the PC adapter and
 
 The script sends `BENCH 1000` and `BENCH 10000` to the target endpoint.
 
-## Limitations
+## Scope
 
-- The input is a synthetic sample generator; no external ADC is connected.
-- The driver performs sequential single-frame DMA, not continuous acquisition.
-- The Xilinx XFFT IP is used as a workload; custom FFT RTL, radix design, and
-  butterfly/pipeline architecture are outside this project scope.
-- The benchmark does not establish multi-hour stability or analog signal
-  quality.
+- Sequential one-frame DMA only; no continuous acquisition, cyclic DMA, or
+  scatter-gather user interface.
+- Synthetic source only; analog capture and ADC validation are out of scope.
+- Xilinx XFFT is used unchanged. Custom FFT RTL, radix design, and pipeline
+  architecture are outside the project.
+- The stress test demonstrates 10,000 transfers, not multi-hour reliability.
 
-## Repository layout
+## Repository map
 
 | Path | Contents |
 | --- | --- |
 | [`hardware/`](hardware) | RTL, Vivado Tcl, constraints, and JTAG scripts |
-| [`linux_driver/`](linux_driver) | Active DMAengine client and historical V1 reference |
+| [`linux_driver/`](linux_driver) | Active DMAengine client and V1 reference |
 | [`include/uapi/`](include/uapi) | Shared ioctl and frame configuration |
 | [`linux_app/`](linux_app) | Smoke test, benchmark, and Ethernet server |
 | [`buildroot-external/`](buildroot-external) | Buildroot packages, DTB, and image scripts |
-| [`docs/`](docs) | Linux integration, architecture, debug, and validation records |
+| [`docs/`](docs) | Integration notes, debug records, and validation evidence |
 
 ## Development check
 
