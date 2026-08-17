@@ -91,22 +91,25 @@ fft_dma_test
 ```
 
 This test opens `/dev/fft_dma0` and invokes the `FFT_DMA_IOCTL_RUN` ioctl. The
-kernel module owns the AXI DMA S2MM channel: it allocates a coherent 4 KiB
-buffer, programs the DMA destination, waits for the PL interrupt, and returns
-the calculated FFT peak to user space. No application-level `/dev/mem` DMA
-access is used.
+kernel module is a DMAengine client: it requests the Xilinx AXI DMA S2MM
+channel, allocates a coherent 4 KiB buffer with the DMAengine device, submits a
+descriptor, waits for its callback, and returns the calculated FFT peak to user
+space. No application-level `/dev/mem` DMA access is used.
 
 Expected result: `Peak bin: 1` and exit status zero. The module is packaged as
 `fft_dma_drv.ko` is loaded by `/etc/init.d/S40fft-dma` and binds the
-`bghjn,zynq7020-fft-dma-1.0` Device Tree node. The node provides the AXI DMA
-register range, capture GPIO range, and S2MM interrupt. The production SD image
-starts the direct Ethernet endpoint instead of the legacy JTAG result runner.
+`bghjn,zynq7020-fft-dmaengine-2.0` client node. The standard
+`xlnx,axi-dma-1.00.a` Device Tree node provides the AXI DMA registers and S2MM
+interrupt; the client node provides the capture GPIO and DMA channel reference.
+The production SD image starts the direct Ethernet endpoint instead of the
+legacy JTAG result runner.
 
 ## Direct Ethernet test
 
 `fft_ethernet_server` starts after the static `eth0` configuration. It listens
-on TCP port 5000 and accepts `PING` and `RUN` commands. `RUN` invokes the same
-`/dev/fft_dma0` kernel ioctl as `fft_dma_test`.
+on TCP port 5000 and accepts `PING`, `RUN`, and `BENCH <iterations>` commands.
+`RUN` invokes the same `/dev/fft_dma0` kernel ioctl as `fft_dma_test`; `BENCH`
+runs the target-side DMAengine latency and throughput test.
 
 Use the isolated direct-link addresses below; do not configure a gateway or
 DHCP client:

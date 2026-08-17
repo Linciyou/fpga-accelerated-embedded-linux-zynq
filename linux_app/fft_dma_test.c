@@ -26,13 +26,14 @@ int main(void)
     close(fd);
 
     printf("Kernel DMA FFT acquisition OK\n");
-    printf("S2MM status: 0x%08x, bytes: %u\n",
+    printf("DMAengine status: 0x%08x, bytes: %u\n",
            result.dma_status, result.bytes_received);
     printf("Peak bin: %u, re: %d, im: %d, mag2: %llu\n",
            result.peak_bin, result.peak_real, result.peak_imag,
            (unsigned long long)result.peak_magnitude_squared);
 
-    if (result.bytes_received != 4096u || result.peak_bin != 1u) {
+    if (result.dma_status != FFT_DMA_STATUS_COMPLETE ||
+        result.bytes_received != 4096u || result.peak_bin != 1u) {
         fprintf(stderr, "Unexpected kernel DMA FFT result\n");
         return 2;
     }

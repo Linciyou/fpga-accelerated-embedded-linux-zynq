@@ -21,5 +21,7 @@ common_flags=(-std=c11 -Wall -Wextra -Werror -Iinclude/uapi)
     -o "$temp_dir/fft_dma_test"
 "$cc_bin" "${common_flags[@]}" linux_app/fft_ethernet_server.c \
     -o "$temp_dir/fft_ethernet_server"
+"$cc_bin" "${common_flags[@]}" linux_app/fft_dma_bench.c \
+    -o "$temp_dir/fft_dma_bench"
 
 printf '%s\n' 'Repository checks passed.'

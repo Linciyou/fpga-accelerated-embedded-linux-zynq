@@ -1,72 +1,68 @@
 # Linux Integration
 
-This project focuses on the Linux boundary between PL hardware and a maintainable software stack.
+The PL stream path is unchanged in V2. The Linux boundary changed from a custom AXI DMA register driver to a DMAengine client design. The standard Xilinx DMAengine provider owns the AXI DMA controller; `fft_dma_drv` owns the application-specific capture trigger, buffer lifecycle, result analysis, and `/dev/fft_dma0` ABI.
 
 ## Ownership split
 
 | Layer | Responsibility | Main files |
 | --- | --- | --- |
-| Vivado design | AXI DMA S2MM registers, capture GPIO, and F2P IRQ | `hardware/vivado/create_zynq7020_fft_linux.tcl` |
-| Device Tree | MMIO resources and interrupt used by the driver | `buildroot-external/board/zynq7020/zynq7020-fft.dts` |
-| Kernel driver | DMA programming, DMA memory, serialization, and completion | `linux_driver/fft_dma_drv.c` |
+| Vivado design | AXI DMA S2MM, capture GPIO, and F2P IRQ | `hardware/vivado/create_zynq7020_fft_linux.tcl` |
+| Xilinx DMA provider | AXI DMA registers, descriptor execution, and S2MM IRQ | Kernel `CONFIG_XILINX_DMA` |
+| Device Tree | Bind the provider and client to the same S2MM channel | `buildroot-external/board/zynq7020/zynq7020-fft.dts` |
+| DMAengine client | Submit one S2MM descriptor and analyse its coherent buffer | `linux_driver/fft_dma_drv.c` |
 | UAPI | Shared ioctl and result structure | `include/uapi/fft_dma_uapi.h` |
-| User space | Start a run and consume the constrained result API | `linux_app/fft_dma_test.c`, `linux_app/fft_ethernet_server.c` |
-| Buildroot | Build the module and applications into the root filesystem | `buildroot-external/package/` |
-
-The application never programs AXI DMA registers or DMA addresses. Those are owned by the kernel driver.
+| User space | Smoke test, benchmark, and Ethernet control | `linux_app/` |
 
 ## Device Tree contract
 
-The `bghjn,zynq7020-fft-dma-1.0` node must provide the resources below. The driver fails probe when a required resource is absent.
+`axi_dma_fft` is a standard `xlnx,axi-dma-1.00.a` controller. Its S2MM child has the GIC SPI 29 interrupt. The Xilinx provider registers this direction as DMA channel `1`.
 
-| Resource | DTS property | Driver use |
+`fft_dma` is the client node. It must contain the capture GPIO `reg`, `dmas = <&axi_dma_fft 1>`, and `dma-names = "rx"`. `dma_request_chan(..., "rx")` defers until the provider is ready and fails probe if the binding is malformed.
+
+The AXI DMA provider has all four clock names required by the Xilinx Linux driver. They use the existing 100 MHz PS FCLK; MM2S and SG are not enabled in hardware, but the provider requests named clock handles during probe.
+
+## Transfer lifecycle
+
+1. The client allocates its 4 KiB buffer with `dma_alloc_coherent()` using the DMAengine device.
+2. It configures the channel for `DMA_DEV_TO_MEM` with a 32-bit stream width.
+3. It prepares and submits one 4096-byte S2MM descriptor, then issues it.
+4. It asserts capture only after the descriptor is pending, then waits up to one second for the DMAengine callback.
+5. On timeout or DMAengine error it deasserts capture and calls `dmaengine_terminate_sync()`.
+6. On completion it verifies zero residue, calculates the FFT peak, and copies the small result structure to user space.
+
+The custom client never maps AXI DMA registers and never owns the S2MM IRQ. User space never programs DMA addresses or uses `/dev/mem`.
+
+## V1 reference
+
+The direct-register implementation is preserved in
+[`linux_driver/v1_register/fft_dma_v1.c`](../linux_driver/v1_register/fft_dma_v1.c).
+V1 maps the AXI DMA registers, programs S2MM directly, clears the DMA status in
+its IRQ handler, and exposes the same narrow ioctl. It is reference code only:
+the V2 Buildroot package compiles `linux_driver/fft_dma_drv.c`, and the V2 DTB
+does not satisfy the V1 binding.
+
+| Concern | V1 | V2 |
 | --- | --- | --- |
-| AXI DMA registers | first `reg`, named `dma` | Reset S2MM, set address and length, read/ack status |
-| Capture GPIO registers | second `reg`, named `capture` | Gate the simulated source for one frame |
-| S2MM interrupt | `interrupts` | Complete a blocked ioctl after success or error |
-
-The driver calls `dma_set_mask_and_coherent(..., DMA_BIT_MASK(32))` and allocates its 4 KiB transfer buffer with `dma_alloc_coherent()`. The DTS does not reserve a fixed buffer because the driver receives a dynamic coherent DMA address from Linux. The board test recorded `0x1F042000`; that is evidence of runtime allocation, not a fixed ABI value.
-
-## Driver contract
-
-`fft_dma_drv` registers `/dev/fft_dma0` as a misc device. A mutex serializes access to the DMA channel and its coherent buffer.
-
-1. Reset S2MM and clear pending DMA status.
-2. Reinitialize the completion, enable completion/error interrupts, and program the coherent DMA address and 4096-byte transfer length.
-3. Enable the capture source and wait up to one second for the S2MM interrupt.
-4. Stop capture, reject timeout/error status, then calculate the largest complex FFT bin in the coherent buffer.
-5. Copy only the result structure to user space.
-
-The IRQ handler acknowledges the AXI DMA status before completing the waiter. This avoids leaving a level-triggered completion interrupt pending.
+| AXI DMA register ownership | Project driver | Xilinx DMAengine provider |
+| S2MM IRQ ownership | Project driver | Xilinx DMAengine provider callback |
+| Client request | Register writes | DMAengine descriptor |
+| Device Tree | One custom node | Standard DMA provider plus client node |
+| Target validation | Single `RUN` baseline | `RUN`, 1k/10k stress, latency, throughput |
 
 ## User-space ABI
 
-`FFT_DMA_IOCTL_RUN` is defined in `include/uapi/fft_dma_uapi.h`. It takes a pointer to `struct fft_dma_result` and returns zero only after a complete, error-free transfer.
+`FFT_DMA_IOCTL_RUN` returns `struct fft_dma_result`. `dma_status` is `FFT_DMA_STATUS_COMPLETE` only after a complete DMAengine transfer. `bytes_received` must be 4096 and the deterministic input must peak at bin 1.
 
-| Field | Meaning |
-| --- | --- |
-| `dma_status` | AXI DMA S2MM status sampled after the request |
-| `bytes_received` | S2MM transfer-length register reported by the design |
-| `peak_bin` | Index with the largest complex magnitude |
-| `peak_real`, `peak_imag` | Q15 value at `peak_bin` |
-| `peak_magnitude_squared` | `real^2 + imag^2`, calculated in the driver |
+The ioctl returns `-ETIMEDOUT` when the callback is absent, `-EIO` when DMAengine reports incomplete/error status or non-zero residue, `-ENOTTY` for an unknown ioctl, and the DMAengine return code for descriptor setup errors.
 
-The ioctl returns `-ETIMEDOUT` for a missing completion, `-EIO` for DMA error or an invalid post-completion state, and `-EOVERFLOW` if Linux provides a DMA address the 32-bit AXI DMA cannot represent. Unknown ioctl numbers return `-ENOTTY`.
+## Buildroot packages
 
-## Buildroot integration
+| Package | Target file | Purpose |
+| --- | --- | --- |
+| `fft-dma-uapi` | staging header | Shared UAPI for module and applications |
+| `fft-dma-driver` | `fft_dma_drv.ko` | DMAengine client module |
+| `fft-dma-test` | `/usr/bin/fft_dma_test` | Single-transfer smoke test |
+| `fft-dma-bench` | `/usr/bin/fft_dma_bench` | Latency, throughput, and stress benchmark |
+| `fft-ethernet-server` | `/usr/sbin/fft_ethernet_server` | `PING`, `RUN`, and `BENCH <iterations>` endpoint |
 
-The `fft-dma-uapi` package installs the shared UAPI header into Buildroot's staging sysroot. The driver and both applications depend on that package, so the header is compiled from one source instead of copied between directories.
-
-After modifying a local package, rebuild from the Linux-native workspace:
-
-```bash
-make -C build/buildroot-zynq7020 fft-dma-uapi-dirclean
-make -C build/buildroot-zynq7020 fft-dma-driver-dirclean
-make -C build/buildroot-zynq7020 fft-dma-test-dirclean
-make -C build/buildroot-zynq7020 fft-ethernet-server-dirclean
-make -C build/buildroot-zynq7020
-```
-
-## Target evidence and limits
-
-The validated SD-boot result is documented in [VALIDATION.md](VALIDATION.md). It proves the kernel-driver path, including a runtime coherent DMA address and DMA completion interrupt, not an ADC acquisition pipeline or a sustained-rate benchmark. The only input source here is the deterministic PL test generator `axis_sample_sim`.
+After changing a local package, rebuild the affected Buildroot packages from the Linux-native workspace. Use the JTAG-first procedure in [DMAENGINE_V2_DEBUG.md](DMAENGINE_V2_DEBUG.md) before producing an SD image.

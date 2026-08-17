@@ -1,9 +1,11 @@
 /* SPDX-License-Identifier: MIT */
+#define _POSIX_C_SOURCE 200809L
 /* Direct Ethernet control endpoint for the FFT DMA kernel driver. */
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -33,6 +35,36 @@ static void run_fft(int client)
                  result.peak_real, result.peak_imag,
                  (unsigned long long)result.peak_magnitude_squared);
     }
+    (void)send(client, response, strlen(response), MSG_NOSIGNAL);
+}
+
+static int parse_bench_command(const char *line, unsigned long *iterations)
+{
+    char *end;
+
+    if (strncmp(line, "BENCH ", 6))
+        return 0;
+    errno = 0;
+    *iterations = strtoul(line + 6, &end, 10);
+    return !errno && end != line + 6 && !strcmp(end, "\n") && *iterations;
+}
+
+static void run_benchmark(int client, unsigned long iterations)
+{
+    char command[96];
+    char response[512];
+    FILE *process;
+
+    snprintf(command, sizeof(command),
+             "/usr/bin/fft_dma_bench --iterations %lu", iterations);
+    process = popen(command, "r");
+    if (!process || !fgets(response, sizeof(response), process)) {
+        if (process)
+            (void)pclose(process);
+        (void)send(client, "ERROR benchmark\n", 16, MSG_NOSIGNAL);
+        return;
+    }
+    (void)pclose(process);
     (void)send(client, response, strlen(response), MSG_NOSIGNAL);
 }
 
@@ -67,8 +99,14 @@ int main(void)
             (void)send(client, "PONG\n", 5, MSG_NOSIGNAL);
         else if (received > 0 && !strcmp(line, "RUN\n"))
             run_fft(client);
-        else
-            (void)send(client, "ERROR command\n", 14, MSG_NOSIGNAL);
+        else {
+            unsigned long iterations;
+
+            if (received > 0 && parse_bench_command(line, &iterations))
+                run_benchmark(client, iterations);
+            else
+                (void)send(client, "ERROR command\n", 14, MSG_NOSIGNAL);
+        }
         close(client);
     }
 }

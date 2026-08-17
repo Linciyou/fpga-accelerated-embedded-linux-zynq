@@ -45,9 +45,10 @@ Simulated 100 MSPS source
   -> PS DDR
 ```
 
-Linux controls AXI DMA through the `fft_dma_drv` platform driver. The driver
-allocates a coherent 4 KiB buffer, programs the runtime DMA destination, waits
-for the S2MM interrupt, and exposes results through `/dev/fft_dma0`.
+Linux uses the standard Xilinx AXI DMA DMAengine driver for S2MM register and
+IRQ ownership. `fft_dma_drv` is the client: it allocates a coherent 4 KiB
+buffer, submits an S2MM descriptor, waits for the callback, and exposes results
+through `/dev/fft_dma0`.
 
 The synthesizable `axis_sample_sim` source produces deterministic 1024-sample
 Q15 frames at a 100 MHz stream clock. It validates the complete PL-to-Linux

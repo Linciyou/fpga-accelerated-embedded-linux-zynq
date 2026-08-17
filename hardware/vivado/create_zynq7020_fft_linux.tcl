@@ -257,11 +257,16 @@ set_property offset 0x41210000 [get_bd_addr_segs {ps7/Data/SEG_axi_gpio_phy_rese
 validate_bd_design
 save_bd_design
 
+# Vivado 2025.2 can terminate an OOC gmii_to_rgmii worker after successful
+# synthesis while writing its utilization report. Synthesize this small block
+# design at top level so implementation remains reproducible on this host.
+set_property synth_checkpoint_mode None [get_files $proj_dir/$proj_name.srcs/sources_1/bd/$bd_name/$bd_name.bd]
+
 make_wrapper -files [get_files $proj_dir/$proj_name.srcs/sources_1/bd/$bd_name/$bd_name.bd] -top
 add_files -norecurse $proj_dir/$proj_name.gen/sources_1/bd/$bd_name/hdl/${bd_name}_wrapper.v
 update_compile_order -fileset sources_1
 
-launch_runs impl_1 -to_step write_bitstream -jobs 4
+launch_runs impl_1 -to_step write_bitstream -jobs 2
 wait_on_run impl_1
 open_run impl_1
 write_hw_platform -fixed -include_bit -force $proj_dir/${proj_name}.xsa

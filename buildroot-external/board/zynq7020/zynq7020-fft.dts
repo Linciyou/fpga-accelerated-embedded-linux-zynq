@@ -19,12 +19,34 @@
 		reg = <0x00000000 0x20000000>;
 	};
 
-	fft_dma: fft-dma@40400000 {
-		compatible = "bghjn,zynq7020-fft-dma-1.0";
-		reg = <0x40400000 0x10000>, <0x41200000 0x1000>;
-		reg-names = "dma", "capture";
-		interrupt-parent = <&intc>;
-		interrupts = <0 29 4>;
+	axi_dma_fft: dma-controller@40400000 {
+		compatible = "xlnx,axi-dma-1.00.a";
+		reg = <0x40400000 0x10000>;
+		#dma-cells = <1>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+		dma-ranges = <0x0 0x0 0x20000000>;
+		clocks = <&clkc 15>, <&clkc 15>, <&clkc 15>, <&clkc 15>;
+		clock-names = "s_axi_lite_aclk", "m_axi_mm2s_aclk",
+			      "m_axi_s2mm_aclk", "m_axi_sg_aclk";
+		xlnx,addrwidth = <32>;
+		xlnx,sg-length-width = <23>;
+
+		dma-channel-s2mm {
+			compatible = "xlnx,axi-dma-s2mm-channel";
+			interrupt-parent = <&intc>;
+			interrupts = <0 29 4>;
+			xlnx,datawidth = <32>;
+			xlnx,include-dre;
+		};
+	};
+
+	fft_dma: fft-dmaengine@41200000 {
+		compatible = "bghjn,zynq7020-fft-dmaengine-2.0";
+		reg = <0x41200000 0x1000>;
+		reg-names = "capture";
+		dmas = <&axi_dma_fft 1>;
+		dma-names = "rx";
 	};
 
 	phy_reset_gpio: gpio@41210000 {

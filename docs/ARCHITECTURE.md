@@ -17,14 +17,16 @@ power-on reset.
 
 ```text
 axis_sample_sim -> AXI4-Stream FIFO -> XFFT -> AXI DMA S2MM
-  -> HP0 -> coherent buffer -> fft_dma_drv -> ioctl client
+  -> HP0 -> Xilinx AXI DMAengine driver -> coherent buffer
+  -> fft_dma_drv DMAengine client -> ioctl client
 ```
 
-The Device Tree gives `fft_dma_drv` a DMA register range, a capture GPIO range,
-and the S2MM interrupt. The driver allocates a 4 KiB coherent buffer, resets
-and starts S2MM, writes the DMA address and length, then waits up to one second
-for the interrupt. The ioctl returns DMA status, received bytes, and the peak
-sample. The full Linux contract is in [LINUX_INTEGRATION.md](LINUX_INTEGRATION.md).
+The Device Tree describes the AXI DMA controller to the Xilinx DMAengine driver,
+then gives `fft_dma_drv` the capture GPIO and S2MM DMA channel. The client
+allocates a 4 KiB coherent buffer from the DMAengine device, submits one S2MM
+descriptor, and waits up to one second for the completion callback. The ioctl
+returns the completion status, received bytes, and peak sample. The full Linux
+contract is in [LINUX_INTEGRATION.md](LINUX_INTEGRATION.md).
 
 ## Ethernet control
 
