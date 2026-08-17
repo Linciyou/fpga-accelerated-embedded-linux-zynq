@@ -232,4 +232,3 @@ module_platform_driver(fft_dma_driver);
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Zynq-7020 FFT AXI DMA S2MM driver");
-
