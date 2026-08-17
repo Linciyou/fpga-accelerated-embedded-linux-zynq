@@ -14,6 +14,11 @@ struct fft_dma_result {
     __u64 peak_magnitude_squared;
 };
 
+#define FFT_DMA_FRAME_SAMPLES 1024u
+#define FFT_DMA_FRAME_BYTES (FFT_DMA_FRAME_SAMPLES * sizeof(__u32))
+#define FFT_DMA_TIMEOUT_MS 1000u
+#define FFT_DMA_EXPECTED_PEAK_BIN 1u
+
 #define FFT_DMA_STATUS_COMPLETE 0x00000001u
 
 #define FFT_DMA_IOCTL_RUN _IOR('F', 0x01, struct fft_dma_result)

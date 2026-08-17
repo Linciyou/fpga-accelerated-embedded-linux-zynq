@@ -1,142 +1,132 @@
 # FPGA-Accelerated Embedded Linux System on Zynq
 
-This project runs a PL FFT capture path on a Zynq-7020 board and controls it
-from Buildroot Linux. `axis_sample_sim` produces a 1024-sample stream, which
-passes through XFFT and AXI DMA S2MM into PS DDR.
+This project is a Zynq-7020 hardware/software integration exercise. Buildroot
+Linux controls a one-frame PL-to-PS DMA path and exposes the result through a
+small kernel driver.
 
-The custom Linux driver is a DMAengine client. It requests the Xilinx S2MM
-channel, allocates a 4 KiB coherent buffer with the DMAengine device, waits for
-the completion callback, and returns the FFT peak through `/dev/fft_dma0`.
-User space does not map AXI DMA registers or DDR through `/dev/mem`.
+The workload uses the Xilinx XFFT IP with a synthesizable sample generator. The
+FFT algorithm and XFFT RTL are not the contribution here. The contribution is
+the integration around it: PS/PL wiring, AXI DMA, Device Tree, a Linux
+DMAengine client, Buildroot packaging, and repeatable board validation.
 
-FSBL, the PL bitstream, and U-Boot boot from QSPI. The kernel, DTB, and
-Buildroot root filesystem are loaded from SD.
+The first version directly operated the AXI DMA registers; the current version
+uses the upstream Xilinx DMAengine provider with a custom client driver, while
+the V1 source remains as historical evidence in
+[`linux_driver/v1_register/`](linux_driver/v1_register/).
 
-## Linux implementation
+## What I built
 
-- The Device Tree describes a standard Xilinx AXI DMA controller and a separate
-  DMAengine client node for the capture GPIO.
-- `fft_dma_drv` requests S2MM through DMAengine and handles coherent memory,
-  callback completion, request serialization, timeout recovery, and the ioctl.
-- `include/uapi/fft_dma_uapi.h` is the shared ABI used by the driver and both
-  user-space clients.
-- Buildroot builds the module, local test client, and direct Ethernet endpoint
-  into the target image.
+- Integrated Zynq PS, AXI4-Stream source, FIFO, Xilinx XFFT IP, AXI DMA S2MM,
+  HP0 DDR access, Ethernet, and UART in Vivado.
+- Described the AXI DMA provider and client relationship in Device Tree.
+- Implemented a small DMAengine client with a serialized ioctl path:
+  `ioctl -> one frame -> wait for completion -> process -> return`.
+- Built the kernel module, UAPI header, test client, benchmark, and Ethernet
+  endpoint into a Buildroot image.
+- Validated the same software payload first over JTAG and then from SD boot.
 
-[Linux integration](docs/LINUX_INTEGRATION.md) documents the Device Tree,
-driver, UAPI, and Buildroot interfaces. [DMAengine V2 validation](docs/DMAENGINE_V2_DEBUG.md)
-contains the JTAG-first stress-test and debugging procedure. [Build and deploy](docs/BUILD_AND_DEPLOY.md)
-contains the build and programming commands.
+## DMA ownership
 
-## Driver evolution
+```text
+Custom fft_dma driver
+  |-- owns capture control register
+  |-- owns coherent result buffer lifecycle
+  |-- exposes /dev/fft_dma0
+  |
+  `-- DMAengine client
+          |
+          v
+Xilinx AXI DMA Linux driver
+  |-- owns AXI DMA registers
+  |-- owns the S2MM IRQ
+  `-- reports descriptor completion
+```
 
-V1 is retained as a readable baseline in
-[`linux_driver/v1_register/`](linux_driver/v1_register/). It owned AXI DMA
-registers and the S2MM IRQ directly. V2 is the active driver in
-[`linux_driver/fft_dma_drv.c`](linux_driver/fft_dma_drv.c): the upstream Xilinx
-DMAengine provider owns the controller and interrupt, while the project driver
-owns the capture trigger, coherent buffer, result checking, and ioctl ABI.
+The Device Tree path is:
 
-V1 has a recorded SD-boot smoke test. V2 adds the DMAengine binding, a
-JTAG-first test gate, 1,000 and 10,000 transfer stress runs, and the latency /
-throughput benchmark. V1 is not built into the V2 image.
+```text
+fft_dma client node
+  -> dmas = <&axi_dma_fft 1>
+  -> dma_request_chan(dev, "rx")
+  -> Xilinx AXI DMAengine provider
+  -> AXI DMA S2MM hardware
+```
+
+The custom driver does not map AXI DMA registers, acknowledge the DMA IRQ, or
+expose DMA addresses to user space.
 
 ## Data path
 
-```mermaid
-flowchart LR
-    subgraph PL["PL"]
-        Source["Sample source"] --> FIFO["AXI4-Stream FIFO"]
-        FIFO --> FFT["XFFT"]
-        FFT --> DMA["AXI DMA S2MM"]
-    end
-    subgraph PS["PS and Embedded Linux"]
-        Buffer["Coherent DMA buffer<br/>in PS DDR"] --> Driver["fft_dma_drv"]
-        Driver --> App["fft_dma_test<br/>or Ethernet server"]
-    end
-    DMA --> Buffer
+```text
+axis_sample_sim -> AXI4-Stream FIFO -> Xilinx XFFT -> AXI DMA S2MM
+    -> Zynq HP0 -> coherent PS DDR buffer -> fft_dma_drv -> /dev/fft_dma0
 ```
 
-The sample source is a synthesizable test generator, not an ADC. It sends a
-deterministic Q15 frame at a 100 MHz stream clock. XFFT output is bit-reversed,
-so this test expects the largest value at bin 1.
+The sample generator produces a deterministic Q15 frame. The frame is
+`1024` 32-bit words, or `4096` bytes. That size matches the current PL test
+stream and keeps one ioctl request bounded and easy to inspect. The driver
+waits up to `1000 ms` as a transfer watchdog; this is an error recovery limit,
+not an expected transfer time.
 
-## Boot layout
+## Validation snapshot
 
-| Storage | Contents |
-| --- | --- |
-| QSPI | FSBL, PL bitstream, and U-Boot |
-| SD FAT partition | `uImage`, `zynq7020-fft.dtb`, and `extlinux.conf` |
-| SD ext4 partition | Buildroot root filesystem |
+- `10,000` consecutive DMA transfers
+- `0` timeout / DMA errors
+- About `205 us` mean end-to-end latency
+
+The latency distribution, throughput, raw output, timeout record, IRQ record,
+DT record, and SD-boot evidence are in
+[`docs/DMAENGINE_V2_DEBUG.md`](docs/DMAENGINE_V2_DEBUG.md).
+
+The reported throughput is sequential end-to-end transaction throughput, not
+AXI DMA peak bandwidth.
+
+## Boot and test
+
+QSPI stores the existing FSBL, PL bitstream, and U-Boot. The software-only SD
+image stores the Linux kernel, DTB, Buildroot root filesystem, driver, and test
+applications.
 
 ```text
-Power on -> QSPI BootROM -> FSBL + bitstream -> U-Boot
-         -> kernel + DTB from SD -> rootfs from /dev/mmcblk0p2
+QSPI BootROM -> FSBL + PL bitstream -> U-Boot
+             -> SD kernel + DTB -> SD rootfs -> /dev/fft_dma0
 ```
 
-The SD image is software-only. It does not contain `BOOT.BIN`, an FSBL, a
-bitstream, or U-Boot.
-
-## V1 baseline board test
-
-This result was captured before the DMAengine V2 conversion. After a QSPI reset
-and SD Linux boot, the PC sent `RUN` to the board over the direct Ethernet link.
-The server opened `/dev/fft_dma0` and issued the V1 ioctl.
-
-```text
-RESULT status=0x00000002 bytes=4096 peak=1 re=16384 im=0 mag2=268435456
-```
-
-`0x00000002` is the V1 AXI DMA idle state after completion. DMAengine V2 passed
-the JTAG `BENCH 1000` and `BENCH 10000` tests with zero timeouts and DMA errors;
-the detailed latency and throughput record is in
-[DMAENGINE_V2_DEBUG.md](docs/DMAENGINE_V2_DEBUG.md). The V1 board record is in
-[VALIDATION.md](docs/VALIDATION.md).
-
-## Run the direct Ethernet test
-
-Use a direct link between the PC USB Ethernet adapter and the board. No router,
-gateway, or DHCP server is used.
-
-```text
-PC:    192.168.7.1/24
-Board: 192.168.7.2/24
-```
+For a direct Ethernet test, use `192.168.7.1/24` on the PC adapter and
+`192.168.7.2/24` on the board:
 
 ```powershell
 .\scripts\set_direct_ethernet.ps1 -InterfaceAlias "<USB Ethernet alias>"
 .\scripts\test_dmaengine_stress.ps1
 ```
 
+The script sends `BENCH 1000` and `BENCH 10000` to the target endpoint.
+
+## Limitations
+
+- The input is a synthetic sample generator; no external ADC is connected.
+- The driver performs sequential single-frame DMA, not continuous acquisition.
+- The Xilinx XFFT IP is used as a workload; custom FFT RTL, radix design, and
+  butterfly/pipeline architecture are outside this project scope.
+- The benchmark does not establish multi-hour stability or analog signal
+  quality.
+
 ## Repository layout
 
 | Path | Contents |
 | --- | --- |
-| [`hardware/`](hardware) | RTL, Vivado Tcl, constraints, QSPI, and JTAG scripts |
-| [`linux_driver/`](linux_driver) | Active DMAengine client and retained V1 direct-register reference |
-| [`include/uapi/`](include/uapi) | Shared ioctl ABI |
-| [`linux_app/`](linux_app) | Local test client and Ethernet server |
-| [`buildroot-external/`](buildroot-external) | Buildroot defconfig, packages, DTB, and SD image files |
-| [`docs/HARDWARE.md`](docs/HARDWARE.md) | Board wiring used by this design |
-| [`docs/LINUX_INTEGRATION.md`](docs/LINUX_INTEGRATION.md) | Device Tree, driver, UAPI, and Buildroot details |
-| [`docs/VALIDATION.md`](docs/VALIDATION.md) | Board test record and test limits |
+| [`hardware/`](hardware) | RTL, Vivado Tcl, constraints, and JTAG scripts |
+| [`linux_driver/`](linux_driver) | Active DMAengine client and historical V1 reference |
+| [`include/uapi/`](include/uapi) | Shared ioctl and frame configuration |
+| [`linux_app/`](linux_app) | Smoke test, benchmark, and Ethernet server |
+| [`buildroot-external/`](buildroot-external) | Buildroot packages, DTB, and image scripts |
+| [`docs/`](docs) | Linux integration, architecture, debug, and validation records |
 
-## Development checks
-
-Run the lightweight source checks from WSL or another Linux host:
+## Development check
 
 ```bash
 ./scripts/check_project.sh
 ```
 
-This checks shell syntax and builds the user-space clients. It does not replace
-the target DMA test. GitHub Actions runs the same check on pushes and pull
-requests.
-
-## Limits
-
-- No external ADC has been connected to this design.
-- The DMAengine V2 JTAG test covers 10,000 sequential 4 KiB transfers. It does
-  not establish multi-hour stability, sustained external-ADC capture, or analog
-  signal quality.
-- The kernel module is GPL-2.0-only because it uses GPL-only kernel symbols.
+This checks shell syntax, whitespace, and host compilation of the user-space
+clients. It does not replace target DMA validation.

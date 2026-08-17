@@ -33,7 +33,8 @@ int main(void)
            (unsigned long long)result.peak_magnitude_squared);
 
     if (result.dma_status != FFT_DMA_STATUS_COMPLETE ||
-        result.bytes_received != 4096u || result.peak_bin != 1u) {
+        result.bytes_received != FFT_DMA_FRAME_BYTES ||
+        result.peak_bin != FFT_DMA_EXPECTED_PEAK_BIN) {
         fprintf(stderr, "Unexpected kernel DMA FFT result\n");
         return 2;
     }

@@ -45,6 +45,7 @@
 		compatible = "bghjn,zynq7020-fft-dmaengine-2.0";
 		reg = <0x41200000 0x1000>;
 		reg-names = "capture";
+		/* Xilinx AXI DMA assigns S2MM to client channel 1. */
 		dmas = <&axi_dma_fft 1>;
 		dma-names = "rx";
 	};

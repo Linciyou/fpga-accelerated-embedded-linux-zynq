@@ -13,7 +13,6 @@
 
 #include <fft_dma_uapi.h>
 
-#define FFT_DMA_BYTES 4096u
 #define MAX_ITERATIONS 1000000ul
 
 static uint64_t monotonic_ns(void)
@@ -107,7 +106,8 @@ int main(int argc, char *argv[])
         }
         end_ns = monotonic_ns();
         if (!end_ns || result.dma_status != FFT_DMA_STATUS_COMPLETE ||
-            result.bytes_received != FFT_DMA_BYTES || result.peak_bin != 1u) {
+            result.bytes_received != FFT_DMA_FRAME_BYTES ||
+            result.peak_bin != FFT_DMA_EXPECTED_PEAK_BIN) {
             ++failed;
             ++validation_errors;
             continue;

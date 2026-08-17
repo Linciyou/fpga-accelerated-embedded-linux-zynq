@@ -13,20 +13,21 @@ BootROM -> FSBL -> bitstream -> U-Boot -> SD kernel/DTB -> SD rootfs
 Set SW3-1 ON and SW3-2 OFF for QSPI boot. The strap pins are sampled during
 power-on reset.
 
-## DMA path
+## Workload and DMA path
 
 ```text
-axis_sample_sim -> AXI4-Stream FIFO -> XFFT -> AXI DMA S2MM
+axis_sample_sim -> AXI4-Stream FIFO -> Xilinx XFFT IP -> AXI DMA S2MM
   -> HP0 -> Xilinx AXI DMAengine driver -> coherent buffer
   -> fft_dma_drv DMAengine client -> ioctl client
 ```
 
-The Device Tree describes the AXI DMA controller to the Xilinx DMAengine driver,
-then gives `fft_dma_drv` the capture GPIO and S2MM DMA channel. The client
-allocates a 4 KiB coherent buffer from the DMAengine device, submits one S2MM
-descriptor, and waits up to one second for the completion callback. The ioctl
-returns the completion status, received bytes, and peak sample. The full Linux
-contract is in [LINUX_INTEGRATION.md](LINUX_INTEGRATION.md).
+The Xilinx XFFT IP is the workload used to exercise the stream and is not custom
+FFT RTL. The Device Tree describes the AXI DMA provider, then gives
+`fft_dma_drv` the capture GPIO and S2MM DMA channel. The client allocates one
+`FFT_DMA_FRAME_BYTES` coherent buffer, submits one descriptor, and waits up to
+`FFT_DMA_TIMEOUT_MS` for the completion callback. The ioctl returns the
+completion status, received bytes, and peak sample. The full Linux contract is
+in [LINUX_INTEGRATION.md](LINUX_INTEGRATION.md).
 
 ## Ethernet control
 

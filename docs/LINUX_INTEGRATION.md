@@ -1,6 +1,9 @@
 # Linux Integration
 
-The PL stream path is unchanged in V2. The Linux boundary changed from a custom AXI DMA register driver to a DMAengine client design. The standard Xilinx DMAengine provider owns the AXI DMA controller; `fft_dma_drv` owns the application-specific capture trigger, buffer lifecycle, result analysis, and `/dev/fft_dma0` ABI.
+The PL stream path is unchanged in V2. The Linux boundary changed from direct
+AXI DMA register access to a DMAengine client design. The standard Xilinx
+DMAengine provider owns the AXI DMA controller; `fft_dma_drv` owns the capture
+trigger, buffer lifecycle, result checking, and `/dev/fft_dma0` ABI.
 
 ## Ownership split
 
@@ -15,31 +18,56 @@ The PL stream path is unchanged in V2. The Linux boundary changed from a custom 
 
 ## Device Tree contract
 
-`axi_dma_fft` is a standard `xlnx,axi-dma-1.00.a` controller. Its S2MM child has the GIC SPI 29 interrupt. The Xilinx provider registers this direction as DMA channel `1`.
+`axi_dma_fft` is a standard `xlnx,axi-dma-1.00.a` controller. Its S2MM child
+has the GIC SPI 29 interrupt. The Xilinx provider registers this direction as
+DMA channel `1`.
 
-`fft_dma` is the client node. It must contain the capture GPIO `reg`, `dmas = <&axi_dma_fft 1>`, and `dma-names = "rx"`. `dma_request_chan(..., "rx")` defers until the provider is ready and fails probe if the binding is malformed.
+`fft_dma` is the client node. It contains the capture GPIO `reg`,
+`dmas = <&axi_dma_fft 1>`, and `dma-names = "rx"`. The lookup path is:
+
+```text
+fft_dma client -> dmas channel 1 -> dma_request_chan("rx")
+              -> Xilinx DMAengine provider -> AXI DMA S2MM
+```
+
+`dma_request_chan(..., "rx")` defers until the provider is ready and fails
+probe if the binding is malformed.
 
 The AXI DMA provider has all four clock names required by the Xilinx Linux driver. They use the existing 100 MHz PS FCLK; MM2S and SG are not enabled in hardware, but the provider requests named clock handles during probe.
 
 ## Transfer lifecycle
 
-1. The client allocates its 4 KiB buffer with `dma_alloc_coherent()` using the DMAengine device.
+1. The client allocates its `FFT_DMA_FRAME_BYTES` buffer with
+   `dma_alloc_coherent()` using the DMAengine device.
 2. It configures the channel for `DMA_DEV_TO_MEM` with a 32-bit stream width.
-3. It prepares and submits one 4096-byte S2MM descriptor, then issues it.
+3. It prepares and submits one `FFT_DMA_FRAME_BYTES` S2MM descriptor, then
+   issues it.
 4. It asserts capture only after the descriptor is pending, then waits up to one second for the DMAengine callback.
 5. On timeout or DMAengine error it deasserts capture and calls `dmaengine_terminate_sync()`.
 6. On completion it verifies zero residue, calculates the FFT peak, and copies the small result structure to user space.
 
 The custom client never maps AXI DMA registers and never owns the S2MM IRQ. User space never programs DMA addresses or uses `/dev/mem`.
 
-## V1 reference
+## Frame configuration
+
+The shared UAPI header defines the fixed test contract:
+
+| Setting | Value | Reason |
+| --- | --- | --- |
+| `FFT_DMA_FRAME_SAMPLES` | `1024` | Current PL sample frame and Xilinx XFFT transform length |
+| `FFT_DMA_FRAME_BYTES` | `4096` | 1024 stream words at 32 bits per word |
+| `FFT_DMA_TIMEOUT_MS` | `1000` | Watchdog for a missing completion, not a transfer target |
+
+The frame size is a workload choice, not a claim about continuous ADC rate.
+The Xilinx XFFT IP exercises the stream; FFT RTL design is outside the Linux
+driver contribution.
+
+## Historical V1 reference
 
 The direct-register implementation is preserved in
 [`linux_driver/v1_register/fft_dma_v1.c`](../linux_driver/v1_register/fft_dma_v1.c).
-V1 maps the AXI DMA registers, programs S2MM directly, clears the DMA status in
-its IRQ handler, and exposes the same narrow ioctl. It is reference code only:
-the V2 Buildroot package compiles `linux_driver/fft_dma_drv.c`, and the V2 DTB
-does not satisfy the V1 binding.
+It is reference code only. The V2 Buildroot package compiles
+`linux_driver/fft_dma_drv.c`, and the V2 DTB does not satisfy the V1 binding.
 
 | Concern | V1 | V2 |
 | --- | --- | --- |
@@ -51,7 +79,10 @@ does not satisfy the V1 binding.
 
 ## User-space ABI
 
-`FFT_DMA_IOCTL_RUN` returns `struct fft_dma_result`. `dma_status` is `FFT_DMA_STATUS_COMPLETE` only after a complete DMAengine transfer. `bytes_received` must be 4096 and the deterministic input must peak at bin 1.
+`FFT_DMA_IOCTL_RUN` returns `struct fft_dma_result`. `dma_status` is
+`FFT_DMA_STATUS_COMPLETE` only after a complete DMAengine transfer.
+`bytes_received` must be `FFT_DMA_FRAME_BYTES` and the deterministic workload
+must peak at `FFT_DMA_EXPECTED_PEAK_BIN`.
 
 The ioctl returns `-ETIMEDOUT` when the callback is absent, `-EIO` when DMAengine reports incomplete/error status or non-zero residue, `-ENOTTY` for an unknown ioctl, and the DMAengine return code for descriptor setup errors.
 

@@ -15,10 +15,6 @@
 
 #include <fft_dma_uapi.h>
 
-#define FFT_SAMPLES             1024u
-#define FFT_DMA_BYTES           (FFT_SAMPLES * sizeof(u32))
-#define FFT_DMA_TIMEOUT_MS      1000u
-
 struct fft_dma_dev {
     void __iomem *capture_regs;
     struct dma_chan *rx_chan;
@@ -53,7 +49,7 @@ static int fft_dma_run(struct fft_dma_dev *fft, struct fft_dma_result *result)
     u64 best_magnitude = 0;
     int ret;
 
-    memset(fft->buffer, 0, FFT_DMA_BYTES);
+    memset(fft->buffer, 0, FFT_DMA_FRAME_BYTES);
     writel(0, fft->capture_regs);
 
     ret = dmaengine_slave_config(fft->rx_chan, &config);
@@ -65,7 +61,7 @@ static int fft_dma_run(struct fft_dma_dev *fft, struct fft_dma_result *result)
 
     reinit_completion(&fft->completion);
     desc = dmaengine_prep_slave_single(fft->rx_chan, fft->buffer_dma,
-                                       FFT_DMA_BYTES, DMA_DEV_TO_MEM,
+                                       FFT_DMA_FRAME_BYTES, DMA_DEV_TO_MEM,
                                        DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
     if (!desc) {
         dev_err_ratelimited(fft->miscdev.parent,
@@ -106,8 +102,8 @@ static int fft_dma_run(struct fft_dma_dev *fft, struct fft_dma_result *result)
     }
 
     result->dma_status = FFT_DMA_STATUS_COMPLETE;
-    result->bytes_received = FFT_DMA_BYTES;
-    for (i = 0; i < FFT_SAMPLES; ++i) {
+    result->bytes_received = FFT_DMA_FRAME_BYTES;
+    for (i = 0; i < FFT_DMA_FRAME_SAMPLES; ++i) {
         s16 real = (s16)(fft->buffer[i] & 0xffffu);
         s16 imag = (s16)(fft->buffer[i] >> 16);
         s64 real64 = real;
@@ -176,7 +172,7 @@ static int fft_dma_probe(struct platform_device *pdev)
 
     init_completion(&fft->completion);
     mutex_init(&fft->lock);
-    fft->buffer = dma_alloc_coherent(fft->dma_dev, FFT_DMA_BYTES,
+    fft->buffer = dma_alloc_coherent(fft->dma_dev, FFT_DMA_FRAME_BYTES,
                                      &fft->buffer_dma, GFP_KERNEL);
     if (!fft->buffer) {
         ret = -ENOMEM;
@@ -197,7 +193,7 @@ static int fft_dma_probe(struct platform_device *pdev)
     return 0;
 
 free_buffer:
-    dma_free_coherent(fft->dma_dev, FFT_DMA_BYTES, fft->buffer,
+    dma_free_coherent(fft->dma_dev, FFT_DMA_FRAME_BYTES, fft->buffer,
                       fft->buffer_dma);
 release_channel:
     dma_release_channel(fft->rx_chan);
@@ -211,7 +207,7 @@ static void fft_dma_remove(struct platform_device *pdev)
     writel(0, fft->capture_regs);
     dmaengine_terminate_sync(fft->rx_chan);
     misc_deregister(&fft->miscdev);
-    dma_free_coherent(fft->dma_dev, FFT_DMA_BYTES, fft->buffer,
+    dma_free_coherent(fft->dma_dev, FFT_DMA_FRAME_BYTES, fft->buffer,
                       fft->buffer_dma);
     dma_release_channel(fft->rx_chan);
 }

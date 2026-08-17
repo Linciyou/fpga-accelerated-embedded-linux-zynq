@@ -92,9 +92,9 @@ fft_dma_test
 
 This test opens `/dev/fft_dma0` and invokes the `FFT_DMA_IOCTL_RUN` ioctl. The
 kernel module is a DMAengine client: it requests the Xilinx AXI DMA S2MM
-channel, allocates a coherent 4 KiB buffer with the DMAengine device, submits a
-descriptor, waits for its callback, and returns the calculated FFT peak to user
-space. No application-level `/dev/mem` DMA access is used.
+channel, allocates one `FFT_DMA_FRAME_BYTES` coherent buffer with the DMAengine
+device, submits a descriptor, waits for its callback, and returns the result to
+user space. No application-level `/dev/mem` DMA access is used.
 
 Expected result: `Peak bin: 1` and exit status zero. The module is packaged as
 `fft_dma_drv.ko` is loaded by `/etc/init.d/S40fft-dma` and binds the
