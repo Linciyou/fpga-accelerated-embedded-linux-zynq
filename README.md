@@ -13,18 +13,10 @@ stream workload. The FFT algorithm itself is not custom RTL in this project.
 
 ## System layout
 
-```text
-PL
-sample source -> AXI4-Stream FIFO -> Xilinx XFFT -> AXI DMA S2MM
-                                                       |
-                                                       v
-PS DDR <-------------------------- Zynq HP0 <----------+
+![Zynq-7020 FPGA and Embedded Linux system layout](docs/assets/zynq7020-system-layout.png)
 
-PS: ARM Cortex-A9 + Buildroot Linux
-fft_dma_drv -> DMAengine API -> Xilinx AXI DMA driver -> AXI DMA
-       |
-       +-> /dev/fft_dma0 -> test, benchmark, Ethernet server
-```
+Teal shows the PL stream path, amber shows the DMA path into DDR, and green
+shows the PS Linux and Ethernet control path.
 
 The data path runs from PL to DDR. The control path runs from Linux through
 DMAengine to the AXI DMA controller. User space does not use `/dev/mem`, program
