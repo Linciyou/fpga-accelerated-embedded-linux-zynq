@@ -11,39 +11,6 @@ module, Device Tree binding, Buildroot integration, boot flow, and Ethernet
 test path. Xilinx XFFT is used as an existing IP block to provide a realistic
 stream workload. The FFT algorithm itself is not custom RTL in this project.
 
-## System layout
-
-```mermaid
-flowchart LR
-    subgraph PL["FPGA PL"]
-        source["Sample source"]
-        fifo["AXI4-Stream FIFO"]
-        xfft["Xilinx XFFT"]
-        dma["AXI DMA S2MM"]
-        source --> fifo --> xfft --> dma
-    end
-
-    dma -->|"HP0"| ddr["PS DDR"]
-
-    subgraph PS["ARM Cortex-A9 / Buildroot Linux"]
-        test["PC / Ethernet test"]
-        device["/dev/fft_dma0"]
-        linux["fft_dma_drv + Xilinx DMAengine"]
-        test --> device --> linux
-    end
-
-    linux -->|"controls"| dma
-
-    classDef hardware fill:#e7f5f6,stroke:#007d8a,color:#17232b
-    classDef software fill:#edf5eb,stroke:#357a47,color:#17232b
-    class source,fifo,xfft,dma,ddr hardware
-    class test,device,linux software
-```
-
-The data path runs from PL to DDR. The control path runs from Linux through
-DMAengine to the AXI DMA controller. User space does not use `/dev/mem`, program
-DMA addresses, or acknowledge DMA interrupts.
-
 ## Main parts
 
 ### FPGA
