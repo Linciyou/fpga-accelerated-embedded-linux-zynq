@@ -1,15 +1,14 @@
-# Zynq-7020 FPGA + Embedded Linux DMA Path
+# FPGA-Accelerated Embedded Linux System
 
-This repository contains the hardware and software for a Zynq-7020 PL-to-PS
-capture path. The PL produces a fixed AXI4-Stream frame, sends it through
-Xilinx XFFT and AXI DMA S2MM, and writes the result into PS DDR through HP0.
-Buildroot Linux exposes one capture through `/dev/fft_dma0` and a small
-Ethernet test endpoint.
+An Embedded Linux bring-up project for a Zynq-7020 PL-to-PS capture pipeline.
+A framed AXI4-Stream workload crosses Xilinx AXI DMA S2MM into PS DDR through
+HP0. Buildroot supplies the target system, and a custom DMAengine client
+exposes one capture through `/dev/fft_dma0`.
 
-XFFT is Xilinx IP used as a realistic stream workload. The FFT algorithm and
-RTL are not custom work in this repository. The work here is the PS/PL
-integration, DMA path, Device Tree binding, Linux client driver, Buildroot
-image, and board validation.
+The repository contains the Vivado Tcl design, Device Tree binding, Linux
+client driver, Buildroot image integration, and JTAG/SD/Ethernet validation
+tools. Xilinx XFFT is used unchanged as the stream workload; the FFT algorithm
+and RTL are outside this project's scope.
 
 ## Design
 
