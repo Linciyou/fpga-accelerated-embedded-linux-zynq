@@ -15,39 +15,29 @@ stream workload. The FFT algorithm itself is not custom RTL in this project.
 
 ```mermaid
 flowchart LR
-    subgraph PL["Programmable Logic<br/>FPGA"]
-        source["Sample source<br/>1024-word frame"]
+    subgraph PL["FPGA PL"]
+        source["Sample source"]
         fifo["AXI4-Stream FIFO"]
-        xfft["Xilinx XFFT IP"]
-        dma["AXI DMA<br/>S2MM"]
+        xfft["Xilinx XFFT"]
+        dma["AXI DMA S2MM"]
         source --> fifo --> xfft --> dma
     end
 
-    subgraph PS["Processing System<br/>Dual ARM Cortex-A9"]
-        ddr["PS DDR<br/>coherent result buffer"]
-        subgraph KERNEL["Linux kernel"]
-            client["fft_dma_drv<br/>DMAengine client"]
-            provider["Xilinx DMAengine provider<br/>AXI DMA registers and S2MM IRQ"]
-        end
-        subgraph USER["Buildroot user space"]
-            device["/dev/fft_dma0"]
-            endpoint["fft_ethernet_server"]
-        end
+    dma -->|"HP0"| ddr["PS DDR"]
+
+    subgraph PS["ARM Cortex-A9 / Buildroot Linux"]
+        test["PC / Ethernet test"]
+        device["/dev/fft_dma0"]
+        linux["fft_dma_drv + Xilinx DMAengine"]
+        test --> device --> linux
     end
 
-    dma -->|"HP0 DMA write"| ddr
-    client -->|"dma_request_chan rx"| provider
-    provider -->|"programs and completes"| dma
-    client --> device
-    device --> endpoint
-    endpoint -->|"GEM0 Ethernet"| pc["PC test client<br/>PING RUN BENCH NETCHECK"]
+    linux -->|"controls"| dma
 
-    classDef pl fill:#e7f5f6,stroke:#007d8a,color:#17232b
-    classDef ps fill:#fff7e8,stroke:#b86b00,color:#17232b
-    classDef linux fill:#edf5eb,stroke:#357a47,color:#17232b
-    class source,fifo,xfft,dma pl
-    class ddr ps
-    class client,provider,device,endpoint,pc linux
+    classDef hardware fill:#e7f5f6,stroke:#007d8a,color:#17232b
+    classDef software fill:#edf5eb,stroke:#357a47,color:#17232b
+    class source,fifo,xfft,dma,ddr hardware
+    class test,device,linux software
 ```
 
 The data path runs from PL to DDR. The control path runs from Linux through
