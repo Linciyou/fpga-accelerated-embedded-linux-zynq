@@ -1,7 +1,6 @@
 # Linux Integration
 
-The PL stream path is unchanged in V2. The Linux boundary changed from direct
-AXI DMA register access to a DMAengine client design. The standard Xilinx
+The Linux implementation uses a DMAengine client design. The standard Xilinx
 DMAengine provider owns the AXI DMA controller; `fft_dma_drv` owns the capture
 trigger, buffer lifecycle, result checking, and `/dev/fft_dma0` ABI.
 
@@ -62,21 +61,6 @@ The frame size is a workload choice, not a claim about continuous ADC rate.
 The Xilinx XFFT IP exercises the stream; FFT RTL design is outside the Linux
 driver contribution.
 
-## Historical V1 reference
-
-The direct-register implementation is preserved in
-[`linux_driver/v1_register/fft_dma_v1.c`](../linux_driver/v1_register/fft_dma_v1.c).
-It is reference code only. The V2 Buildroot package compiles
-`linux_driver/fft_dma_drv.c`, and the V2 DTB does not satisfy the V1 binding.
-
-| Concern | V1 | V2 |
-| --- | --- | --- |
-| AXI DMA register ownership | Project driver | Xilinx DMAengine provider |
-| S2MM IRQ ownership | Project driver | Xilinx DMAengine provider callback |
-| Client request | Register writes | DMAengine descriptor |
-| Device Tree | One custom node | Standard DMA provider plus client node |
-| Target validation | Single `RUN` baseline | `RUN`, 1k/10k stress, latency, throughput |
-
 ## User-space ABI
 
 `FFT_DMA_IOCTL_RUN` returns `struct fft_dma_result`. `dma_status` is
@@ -94,6 +78,6 @@ The ioctl returns `-ETIMEDOUT` when the callback is absent, `-EIO` when DMAengin
 | `fft-dma-driver` | `fft_dma_drv.ko` | DMAengine client module |
 | `fft-dma-test` | `/usr/bin/fft_dma_test` | Single-transfer smoke test |
 | `fft-dma-bench` | `/usr/bin/fft_dma_bench` | Latency, throughput, and stress benchmark |
-| `fft-ethernet-server` | `/usr/sbin/fft_ethernet_server` | `PING`, `RUN`, and `BENCH <iterations>` endpoint |
+| `fft-ethernet-server` | `/usr/sbin/fft_ethernet_server` | `PING`, `RUN`, `BENCH <iterations>`, and `NETCHECK` endpoint |
 
-After changing a local package, rebuild the affected Buildroot packages from the Linux-native workspace. Use the JTAG-first procedure in [DMAENGINE_V2_DEBUG.md](DMAENGINE_V2_DEBUG.md) before producing an SD image.
+After changing a local package, rebuild the affected Buildroot packages from the Linux-native workspace. Use the JTAG-first procedure in [DMAENGINE_DEBUG.md](DMAENGINE_DEBUG.md) before producing an SD image.

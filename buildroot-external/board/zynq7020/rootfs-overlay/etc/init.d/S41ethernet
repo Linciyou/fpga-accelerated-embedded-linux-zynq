@@ -1,0 +1,24 @@
+#!/bin/sh
+
+# Prefer DHCP for a router or Internet Connection Sharing. Keep the static
+# address as a fallback so the isolated PC-to-board DMA test remains usable.
+case "$1" in
+    start)
+        count=0
+        while ! /bin/busybox ip link show dev eth0 >/dev/null 2>&1; do
+            count=$((count + 1))
+            [ "$count" -ge 200 ] && exit 1
+            sleep 0.1
+        done
+
+        /bin/busybox ip link set dev eth0 up || exit 1
+        if /sbin/udhcpc -i eth0 -n -q -t 3 -T 3 >/dev/console 2>&1; then
+            exit 0
+        fi
+
+        /bin/busybox ifconfig eth0 192.168.7.2 netmask 255.255.255.0 up || exit 1
+        # The PC USB Ethernet adapter is the NAT gateway for direct-link mode.
+        /bin/busybox ip route replace default via 192.168.7.1 dev eth0 || exit 1
+        printf '%s\n' 'nameserver 1.1.1.1' > /etc/resolv.conf
+        ;;
+esac

@@ -32,7 +32,10 @@ in [LINUX_INTEGRATION.md](LINUX_INTEGRATION.md).
 ## Ethernet control
 
 `fft_ethernet_server` listens on TCP port 5000. `PING` returns `PONG`; `RUN`
-opens `/dev/fft_dma0` and calls `FFT_DMA_IOCTL_RUN`. Ethernet is only used to
+opens `/dev/fft_dma0` and calls `FFT_DMA_IOCTL_RUN`; `NETCHECK` verifies target
+IP reachability and DNS resolution. The boot script requests a DHCP lease for
+router or Internet Connection Sharing use, then falls back to the static
+direct-link address when no DHCP service is present. Ethernet is only used to
 start a test and read its result.
 
 ## Replacing the sample source

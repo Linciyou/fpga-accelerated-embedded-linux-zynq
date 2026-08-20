@@ -1,5 +1,6 @@
 # Generated FPGA and Vitis outputs
 /.Xil/
+/.srcs/
 /.p/
 /build/
 *.bit

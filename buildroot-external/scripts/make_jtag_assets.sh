@@ -20,7 +20,7 @@ cp "$linux_dir/arch/arm/boot/zImage" "$images_dir/zImage"
 cp "$images_dir/zynq7020-fft.dtb" "$images_dir/zynq7020-fft-jtag.dtb"
 cp "$images_dir/zynq7020-fft.dtb" "$images_dir/zynq7020-fft-qspi-program.dtb"
 "$fdtput_bin" -t s "$images_dir/zynq7020-fft-jtag.dtb" /chosen bootargs \
-    "console=ttyPS1,115200 root=/dev/ram rw ip=192.168.7.2::0.0.0.0:255.255.255.0::eth0:off"
+    "console=ttyPS1,115200 root=/dev/ram rw"
 "$fdtput_bin" -t x "$images_dir/zynq7020-fft-jtag.dtb" /chosen linux,initrd-start "$initrd_addr"
 "$fdtput_bin" -t x "$images_dir/zynq7020-fft-jtag.dtb" /chosen linux,initrd-end "$initrd_end"
 

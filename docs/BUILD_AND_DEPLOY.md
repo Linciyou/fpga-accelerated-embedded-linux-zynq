@@ -83,4 +83,14 @@ Set the direct-link address on the PC, then invoke the Ethernet test:
 .\scripts\test_fft_over_ethernet.ps1
 ```
 
+For a direct PC-to-board link with Internet access, configure the PC USB
+Ethernet adapter as the NAT gateway at `192.168.7.1`, then use:
+
+```powershell
+.\scripts\test_fft_over_ethernet.ps1 -VerifyInternet
+```
+
+With a DHCP-enabled router or Windows Internet Connection Sharing, the board
+uses the lease-provided address, route, and DNS settings instead.
+
 For JTAG boot-state inspection, use `hardware/vivado/jtag_boot_mode_state.tcl`.

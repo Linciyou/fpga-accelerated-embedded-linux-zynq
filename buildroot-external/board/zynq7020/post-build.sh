@@ -12,5 +12,5 @@ fi
 
 chmod 0755 "$target_dir/etc/init.d/S39qspi-program"
 chmod 0755 "$target_dir/etc/init.d/S40fft-dma"
-chmod 0755 "$target_dir/etc/init.d/S41direct-ethernet"
+chmod 0755 "$target_dir/etc/init.d/S41ethernet"
 chmod 0755 "$target_dir/etc/init.d/S60fft-ethernet"
