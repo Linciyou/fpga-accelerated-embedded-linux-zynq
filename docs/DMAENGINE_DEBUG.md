@@ -1,6 +1,9 @@
-# DMAengine V2 Validation and Debugging
+# DMAengine Validation and Debugging
 
-V2 changes `fft_dma_drv` from an AXI DMA register driver into a DMAengine client. The standard Xilinx AXI DMA driver owns the S2MM register block and interrupt. `fft_dma_drv` requests the S2MM channel, allocates its coherent buffer with the DMAengine device, submits one `DMA_DEV_TO_MEM` descriptor, and waits for the completion callback.
+`fft_dma_drv` is a DMAengine client. The standard Xilinx AXI DMA driver owns
+the S2MM register block and interrupt. `fft_dma_drv` requests the S2MM channel,
+allocates its coherent buffer with the DMAengine device, submits one
+`DMA_DEV_TO_MEM` descriptor, and waits for the completion callback.
 
 ## JTAG-first validation
 
@@ -59,7 +62,7 @@ the card.
 
 The validated card was inserted in the FPGA board and the system was reset into
 the existing QSPI hardware boot stage. The direct Ethernet service replied to
-`PING`, then the V2 payload from SD produced:
+`PING`, then the software payload from SD produced:
 
 ```text
 RESULT status=0x00000001 bytes=4096 peak=1 re=16384 im=0 mag2=268435456
@@ -67,13 +70,15 @@ DMAENGINE_BENCH iterations=1000 ok=1000 failed=0 timeouts=0 dma_errors=0 validat
 DMAENGINE_BENCH iterations=10000 ok=10000 failed=0 timeouts=0 dma_errors=0 validation_errors=0 bytes=40960000 elapsed_us=2070706 min_us=202.926 avg_us=205.375 p50_us=204.450 p95_us=206.574 max_us=474.000 throughput_mib_s=18.864
 ```
 
-This is the final V2 evidence: QSPI supplied the existing FSBL, bitstream, and
-U-Boot; SD supplied the V2 kernel, DTB, root filesystem, DMAengine client, and
+This is the final evidence: QSPI supplied the existing FSBL, bitstream, and
+U-Boot; SD supplied the kernel, DTB, root filesystem, DMAengine client, and
 benchmark.
 
 ## Timeout record
 
-The V2 client returns `ETIMEDOUT` after 1000 ms if its DMAengine callback does not run. It disables the capture GPIO and calls `dmaengine_terminate_sync()` before returning, so the next request starts from a terminated channel.
+The client returns `ETIMEDOUT` after 1000 ms if its DMAengine callback does not
+run. It disables the capture GPIO and calls `dmaengine_terminate_sync()` before
+returning, so the next request starts from a terminated channel.
 
 Capture these commands immediately after a timeout:
 
@@ -93,7 +98,7 @@ Check that the XFFT stream reaches the S2MM input, `TLAST` reaches AXI DMA, the 
 
 ## IRQ or DMAengine error record
 
-The custom driver no longer acknowledges AXI DMA status registers. The Xilinx DMAengine driver owns the IRQ and reports completion through the callback. If the callback runs but `dmaengine_tx_status()` is not `DMA_COMPLETE`, V2 returns `EIO`, terminates the channel, and logs the DMAengine status and residue.
+The custom driver does not acknowledge AXI DMA status registers. The Xilinx DMAengine driver owns the IRQ and reports completion through the callback. If the callback runs but `dmaengine_tx_status()` is not `DMA_COMPLETE`, the client returns `EIO`, terminates the channel, and logs the DMAengine status and residue.
 
 Capture the same `dmesg`, `/proc/interrupts`, and DMAengine summary output. An interrupt counter that does not change points to the PL-to-PS IRQ path. A counter that changes with `EIO` points to a stream protocol, DMA configuration, or AXI error that must be diagnosed in the Xilinx DMAengine log.
 
@@ -116,4 +121,4 @@ ls -l /sys/class/misc/fft_dma0
 find /sys/firmware/devicetree/base -maxdepth 3 -type f | grep -E 'dma|fft'
 ```
 
-Do not use a fixed DMA address or `/dev/mem` as a workaround. That would bypass the V2 DMAengine path being validated.
+Do not use a fixed DMA address or `/dev/mem` as a workaround. That would bypass the DMAengine path being validated.

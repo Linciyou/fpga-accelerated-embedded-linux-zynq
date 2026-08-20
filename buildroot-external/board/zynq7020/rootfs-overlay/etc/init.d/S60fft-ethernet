@@ -2,7 +2,6 @@
 
 case "$1" in
     start)
-        /bin/busybox ifconfig eth0 192.168.7.2 netmask 255.255.255.0 up || exit 1
         /bin/busybox pidof fft_ethernet_server >/dev/null 2>&1 && exit 0
         /usr/sbin/fft_ethernet_server &
         ;;

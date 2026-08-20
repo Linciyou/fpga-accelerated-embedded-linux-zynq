@@ -101,23 +101,28 @@ Expected result: `Peak bin: 1` and exit status zero. The module is packaged as
 `bghjn,zynq7020-fft-dmaengine-2.0` client node. The standard
 `xlnx,axi-dma-1.00.a` Device Tree node provides the AXI DMA registers and S2MM
 interrupt; the client node provides the capture GPIO and DMA channel reference.
-The production SD image starts the direct Ethernet endpoint instead of the
-legacy JTAG result runner.
+The production SD image starts the Ethernet endpoint after network setup.
 
-## Direct Ethernet test
+## Ethernet modes
 
-`fft_ethernet_server` starts after the static `eth0` configuration. It listens
-on TCP port 5000 and accepts `PING`, `RUN`, and `BENCH <iterations>` commands.
-`RUN` invokes the same `/dev/fft_dma0` kernel ioctl as `fft_dma_test`; `BENCH`
-runs the target-side DMAengine latency and throughput test.
+`fft_ethernet_server` starts after `eth0` configuration. It listens
+on TCP port 5000 and accepts `PING`, `RUN`, `BENCH <iterations>`, and
+`NETCHECK`. `RUN` invokes the same `/dev/fft_dma0` kernel ioctl as
+`fft_dma_test`; `BENCH` runs the target-side DMAengine latency and throughput
+test; `NETCHECK` verifies target Internet reachability and DNS resolution.
 
-Use the isolated direct-link addresses below; do not configure a gateway or
-DHCP client:
+The network script requests DHCP first. A router or PC Internet Connection
+Sharing supplies the board address, default route, and DNS settings. If DHCP
+is unavailable, the script falls back to the isolated direct-link addresses:
 
 ```text
 PC USB Ethernet adapter: 192.168.7.1/24
 Zynq eth0:               192.168.7.2/24
 ```
+
+The BusyBox configuration explicitly enables `udhcpc`, `ping`, and `nslookup`.
+After a DHCP boot, use `ip route`, `ping -c 3 1.1.1.1`, and
+`nslookup example.com` to verify route and DNS availability.
 
 The FPGA image exposes PS GEM0 through EMIO and the PL GMII-to-RGMII bridge to
 the board RTL8211E PHY. The matching Device Tree enables the MAC, converter,

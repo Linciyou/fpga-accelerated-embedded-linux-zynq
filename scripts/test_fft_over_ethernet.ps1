@@ -1,7 +1,8 @@
 param(
     [string]$BoardAddress = "192.168.7.2",
     [int]$Port = 5000,
-    [int]$TimeoutMilliseconds = 5000
+    [int]$TimeoutMilliseconds = 5000,
+    [switch]$VerifyInternet
 )
 
 $ErrorActionPreference = "Stop"
@@ -29,6 +30,13 @@ function Invoke-ZynqCommand([string]$Command) {
 $ping = Invoke-ZynqCommand "PING"
 if ($ping -ne "PONG") {
     throw "Unexpected board response: $ping"
+}
+
+if ($VerifyInternet) {
+    $network = Invoke-ZynqCommand "NETCHECK"
+    if ($network -ne "NET status=ok") {
+        throw "Board Internet check failed: $network"
+    }
 }
 
 $result = Invoke-ZynqCommand "RUN"

@@ -68,6 +68,23 @@ static void run_benchmark(int client, unsigned long iterations)
     (void)send(client, response, strlen(response), MSG_NOSIGNAL);
 }
 
+static void run_network_check(int client)
+{
+    FILE *process;
+    int status;
+
+    process = popen("ping -c 1 -W 3 1.1.1.1 >/dev/null 2>&1 && "
+                    "nslookup example.com >/dev/null 2>&1", "r");
+    if (!process) {
+        (void)send(client, "NET status=error\n", 17, MSG_NOSIGNAL);
+        return;
+    }
+
+    status = pclose(process);
+    (void)send(client, status ? "NET status=failed\n" : "NET status=ok\n",
+               status ? 18 : 14, MSG_NOSIGNAL);
+}
+
 int main(void)
 {
     struct sockaddr_in address = {
@@ -99,6 +116,8 @@ int main(void)
             (void)send(client, "PONG\n", 5, MSG_NOSIGNAL);
         else if (received > 0 && !strcmp(line, "RUN\n"))
             run_fft(client);
+        else if (received > 0 && !strcmp(line, "NETCHECK\n"))
+            run_network_check(client);
         else {
             unsigned long iterations;
 
