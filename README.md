@@ -1,157 +1,103 @@
 # Zynq-7020 FPGA + Embedded Linux Bring-Up
 
-The board first brings up its PS GEM0 Ethernet connection. With a router or a
-PC using Internet Connection Sharing, `eth0` obtains an address, gateway, and
-DNS settings through DHCP, so the Zynq can reach the Internet. The same link
-is used to send capture commands to `fft_ethernet_server`.
+This repository contains the hardware and software needed to run a small
+Zynq-7020 capture system. The board starts Buildroot Linux, brings up Ethernet,
+and can reach the Internet. The programmable logic generates a fixed
+AXI4-Stream frame; the result is processed by Xilinx XFFT and written to PS DDR
+by AXI DMA.
 
-Behind the network service is a Zynq-7020 PL-to-PS data path. The PL sends one
-AXI4-Stream frame through Xilinx XFFT and AXI DMA S2MM; the DMA writes the
-result into PS DDR through HP0. Buildroot Linux on the dual ARM Cortex-A9
-handles the capture request and returns the result through `/dev/fft_dma0`.
+## Network access
 
-Xilinx XFFT is used as an existing IP block for the stream workload. The FFT
-algorithm itself is not custom RTL in this project.
+Ethernet is part of the normal boot path, not only a debug cable. `eth0` asks
+for a DHCP lease at startup. When connected to a router, or to a PC using
+Internet Connection Sharing, the board receives its address, default route,
+and DNS settings and can reach the Internet.
 
-## System layout
+## Capture data flow
 
 ```mermaid
 flowchart LR
     source["Sample source"] --> fifo["AXI4-Stream FIFO"]
     fifo --> xfft["Xilinx XFFT"]
     xfft --> dma["AXI DMA S2MM"]
-    dma -->|"HP0"| ddr["PS DDR"]
+    dma --> ddr["PS DDR"]
 
     classDef block fill:#e7f5f6,stroke:#007d8a,color:#17232b
     class source,fifo,xfft,dma,ddr block
 ```
 
-This diagram shows only the capture data path. Linux and Ethernet are the
-control interface for starting the transfer and reading the result.
+The sample source sends 1024 words per frame. Each word is 32 bits, so one
+transfer is 4096 bytes. The lower 16 bits contain the Q15 real value; the upper
+16 bits are zero for the imaginary value. There is no external ADC in this
+design.
 
-## Main parts
+Xilinx XFFT is used unchanged as a stream workload. The project does not claim
+custom FFT RTL or a custom FFT algorithm.
 
-### FPGA
+## Linux side
 
-[`hardware/vivado/create_zynq7020_fft_linux.tcl`](hardware/vivado/create_zynq7020_fft_linux.tcl)
-creates the Vivado design. It includes the AXI4-Stream source, FIFO, XFFT,
-AXI DMA S2MM, HP0 connection, capture GPIO, and PL-to-PS interrupt. The
-`axis_sample_sim` block produces a deterministic test frame; there is no ADC in
-the current design.
+Buildroot creates the ARMv7 Linux image for the Zynq PS and includes the kernel
+module, user-space applications, and SD card image. The active configuration is
+[zynq7020_fft_defconfig](buildroot-external/configs/zynq7020_fft_defconfig).
 
-### ARM Cortex-A9 and Embedded Linux
+The kernel module [fft_dma_drv.c](linux_driver/fft_dma_drv.c) is a DMAengine
+client. It submits one S2MM transfer, waits for completion, checks the result,
+and returns it through `/dev/fft_dma0`. The Xilinx DMAengine provider keeps
+ownership of the AXI DMA registers and interrupt.
 
-The Zynq PS runs Buildroot Linux for ARMv7 Cortex-A9. The external Buildroot
-tree selects the kernel, root filesystem, module, user-space test tools, and
-software-only SD image:
+The Device Tree connects the client to the S2MM channel and also describes the
+Ethernet MAC, PHY reset, and Realtek PHY:
+[zynq7020-fft.dts](buildroot-external/board/zynq7020/zynq7020-fft.dts).
 
-[`buildroot-external/configs/zynq7020_fft_defconfig`](buildroot-external/configs/zynq7020_fft_defconfig)
+## Boot and test
 
-### Linux kernel and DMAengine
-
-[`linux_driver/fft_dma_drv.c`](linux_driver/fft_dma_drv.c) is an out-of-tree
-platform driver and DMAengine client. It owns the capture GPIO, coherent result
-buffer, completion wait, result check, and `/dev/fft_dma0` ABI.
-
-The in-kernel Xilinx DMAengine provider owns the AXI DMA register block and the
-S2MM interrupt. One request follows this sequence:
+QSPI holds the FSBL, PL bitstream, and U-Boot. The SD card contains the Linux
+kernel, Device Tree, root filesystem, module, and test applications.
 
 ```text
-ioctl -> submit one S2MM descriptor -> assert capture -> wait for callback
-      -> check residue and FFT peak -> return result
+BootROM -> FSBL -> PL bitstream -> U-Boot -> SD Linux
 ```
 
-### Device Tree
+JTAG is used first to load the test payload without writing storage. Once the
+same payload passes through JTAG, it is written to the SD card and checked
+again after normal boot.
 
-The board DTS keeps the DMA controller and client as separate nodes:
-
-```text
-fft_dma client node
-  -> dmas = <&axi_dma_fft 1>
-  -> dma_request_chan(dev, "rx")
-  -> Xilinx DMAengine provider
-  -> AXI DMA S2MM channel
-```
-
-The same DTS also enables GEM0, the EMIO GMII-to-RGMII path, PHY reset, and the
-Realtek PHY. See
-[`buildroot-external/board/zynq7020/zynq7020-fft.dts`](buildroot-external/board/zynq7020/zynq7020-fft.dts).
-
-### Ethernet
-
-The PS GEM0 MAC is connected through EMIO and the PL GMII-to-RGMII bridge to
-the board Ethernet PHY. Buildroot starts `fft_ethernet_server` on TCP port
-5000 after network setup.
-
-The startup script tries DHCP first. This works with a router or Windows
-Internet Connection Sharing. Without DHCP, it falls back to the direct cable
-address `192.168.7.2/24`; the PC USB Ethernet adapter uses `192.168.7.1/24`.
-
-```powershell
-.\scripts\set_direct_ethernet.ps1 -InterfaceAlias "<USB Ethernet alias>"
-.\scripts\test_fft_over_ethernet.ps1
-```
-
-The endpoint accepts `PING`, `RUN`, `BENCH <iterations>`, and `NETCHECK`.
-`RUN` performs one DMA-backed frame; `BENCH` runs the target benchmark;
-`NETCHECK` verifies the target route and DNS resolution.
-
-## Frame used for bring-up
-
-The test source sends 1024 words per frame. Each word is 32 bits, so one DMA
-transfer is 4096 bytes. The lower 16 bits hold the Q15 real value and the upper
-16 bits are zero for the imaginary value. The 1000 ms timeout is a recovery
-watchdog, not the expected transfer time. Shared definitions are in
-[`include/uapi/fft_dma_uapi.h`](include/uapi/fft_dma_uapi.h).
-
-## Boot and validation
-
-QSPI contains the FSBL, PL bitstream, and U-Boot. Linux stays on the SD card:
-
-```text
-BootROM -> FSBL -> PL bitstream -> U-Boot -> SD kernel + DTB -> SD rootfs
-```
-
-JTAG is used first to load the bitstream, kernel, initramfs, and DTB without
-writing QSPI or the SD card. After the JTAG test passes, the same software
-payload is written to the SD card and tested again after normal boot.
-
-Recorded DMAengine results:
+Recorded target results:
 
 | Test | Result |
 | --- | --- |
-| `BENCH 1000` | 1000 completed transfers; 0 timeout and DMA errors; 205.119 us mean latency; 18.891 MiB/s |
-| `BENCH 10000` | 10000 completed transfers; 0 timeout and DMA errors; 205.413 us mean latency; 18.863 MiB/s |
+| 1,000 transfers | 0 timeout or DMA errors, 205.119 us mean latency, 18.891 MiB/s |
+| 10,000 transfers | 0 timeout or DMA errors, 205.413 us mean latency, 18.863 MiB/s |
 
-These numbers measure one sequential 4096-byte transaction from trigger to
-result return. They are not AXI DMA peak bandwidth or an ADC sample-rate claim.
-The command log and timeout, IRQ, and Device Tree debugging notes are in
-[`docs/DMAENGINE_DEBUG.md`](docs/DMAENGINE_DEBUG.md).
+The throughput is the end-to-end rate for sequential 4096-byte transactions.
+It is not AXI DMA peak bandwidth or an ADC sample-rate claim. Debug records
+for DMA timeout, IRQ, and Device Tree failures are in
+[DMAENGINE_DEBUG.md](docs/DMAENGINE_DEBUG.md).
 
-## Repository layout
+## Repository contents
 
-| Path | Purpose |
+| Path | Contents |
 | --- | --- |
-| [`hardware/`](hardware) | Vivado Tcl, constraints, JTAG scripts, and PL sources |
-| [`linux_driver/`](linux_driver) | DMAengine client kernel module |
-| [`include/uapi/`](include/uapi) | Shared ioctl ABI and frame constants |
-| [`linux_app/`](linux_app) | Smoke test, benchmark, and Ethernet server |
-| [`buildroot-external/`](buildroot-external) | Buildroot packages, DTS, rootfs overlay, and image scripts |
-| [`docs/`](docs) | Hardware notes, build steps, validation, and debugging records |
-| [`scripts/`](scripts) | SD card and Ethernet test helpers |
+| [hardware/](hardware) | Vivado Tcl, constraints, JTAG scripts, and PL sources |
+| [linux_driver/](linux_driver) | DMAengine client module |
+| [linux_app/](linux_app) | Test program and benchmark |
+| [include/uapi/](include/uapi) | Shared ioctl ABI and frame constants |
+| [buildroot-external/](buildroot-external) | Buildroot packages, DTS, rootfs overlay, and image scripts |
+| [docs/](docs) | Build, validation, hardware, and debugging notes |
+| [scripts/](scripts) | Build checks and SD card helpers |
 
 ## Limits
 
 - The input is a synthetic PL source, not an external ADC.
-- Transfers are sequential, one frame at a time. There is no cyclic DMA,
-  scatter-gather user interface, or continuous acquisition path.
-- XFFT is Xilinx IP used unchanged.
+- Transfers are one frame at a time; there is no cyclic DMA or continuous
+  acquisition path.
+- The 1000 ms timeout is a recovery watchdog, not a transfer-time target.
 
-## Local check
+Run the local source checks with:
 
 ```bash
 ./scripts/check_project.sh
 ```
 
-For build and deployment commands, see
-[`docs/BUILD_AND_DEPLOY.md`](docs/BUILD_AND_DEPLOY.md).
+Build and deployment commands are in
+[BUILD_AND_DEPLOY.md](docs/BUILD_AND_DEPLOY.md).
