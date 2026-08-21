@@ -1,48 +1,33 @@
 # Zynq-7020 FPGA + Embedded Linux Bring-Up
 
-This repository is a Zynq-7020 bring-up project. Buildroot Linux runs on the
-Zynq PS dual ARM Cortex-A9, while the PL sends a fixed AXI4-Stream frame to PS
-DDR through Xilinx AXI DMA S2MM and HP0. The Linux side triggers one capture,
-waits for DMA completion, checks the FFT result, and returns it through
-`/dev/fft_dma0`.
+The board first brings up its PS GEM0 Ethernet connection. With a router or a
+PC using Internet Connection Sharing, `eth0` obtains an address, gateway, and
+DNS settings through DHCP, so the Zynq can reach the Internet. The same link
+is used to send capture commands to `fft_ethernet_server`.
 
-The project is about the PS/PL boundary: the Vivado block design, Linux kernel
-module, Device Tree binding, Buildroot integration, boot flow, and Ethernet
-test path. Xilinx XFFT is used as an existing IP block to provide a realistic
-stream workload. The FFT algorithm itself is not custom RTL in this project.
+Behind the network service is a Zynq-7020 PL-to-PS data path. The PL sends one
+AXI4-Stream frame through Xilinx XFFT and AXI DMA S2MM; the DMA writes the
+result into PS DDR through HP0. Buildroot Linux on the dual ARM Cortex-A9
+handles the capture request and returns the result through `/dev/fft_dma0`.
+
+Xilinx XFFT is used as an existing IP block for the stream workload. The FFT
+algorithm itself is not custom RTL in this project.
 
 ## System layout
 
 ```mermaid
 flowchart LR
-    subgraph PL["FPGA PL"]
-        source["Sample source"]
-        fifo["AXI4-Stream FIFO"]
-        xfft["Xilinx XFFT"]
-        dma["AXI DMA S2MM"]
-        source --> fifo --> xfft --> dma
-    end
-
+    source["Sample source"] --> fifo["AXI4-Stream FIFO"]
+    fifo --> xfft["Xilinx XFFT"]
+    xfft --> dma["AXI DMA S2MM"]
     dma -->|"HP0"| ddr["PS DDR"]
 
-    subgraph PS["ARM Cortex-A9 / Buildroot Linux"]
-        test["PC / Ethernet test"]
-        device["/dev/fft_dma0"]
-        linux["fft_dma_drv + Xilinx DMAengine"]
-        test --> device --> linux
-    end
-
-    linux -->|"controls"| dma
-
-    classDef hardware fill:#e7f5f6,stroke:#007d8a,color:#17232b
-    classDef software fill:#edf5eb,stroke:#357a47,color:#17232b
-    class source,fifo,xfft,dma,ddr hardware
-    class test,device,linux software
+    classDef block fill:#e7f5f6,stroke:#007d8a,color:#17232b
+    class source,fifo,xfft,dma,ddr block
 ```
 
-The data path runs from PL to DDR. The control path runs from Linux through
-DMAengine to the AXI DMA controller. User space does not use `/dev/mem`, program
-DMA addresses, or acknowledge DMA interrupts.
+This diagram shows only the capture data path. Linux and Ethernet are the
+control interface for starting the transfer and reading the result.
 
 ## Main parts
 
