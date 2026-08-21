@@ -1,4 +1,4 @@
-# Zynq-7020 FPGA + Embedded Linux Bring-Up
+# FPGA-accelerated Embedded Linux system
 
 This repository is a Zynq-7020 bring-up project. Buildroot Linux runs on the
 Zynq PS dual ARM Cortex-A9, while the PL sends a fixed AXI4-Stream frame to PS
